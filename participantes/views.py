@@ -798,17 +798,10 @@ def inscripcion_publica_view(request, id_evento):
             'mensaje': f"El evento '{evento.nombre}' se encuentra en estado '{evento.get_estado_display()}'. No admite inscripciones."
         }, status=400)
 
-    # 3. Validar cupo disponible
+    # 3. Calcular cupos disponibles (sin bloquear aún para permitir recuperación de ya inscritos)
     total_activos = evento.inscripciones.filter(estado=EstadoInscripcion.ACTIVA).count()
     cupos_disponibles = max(0, evento.cupo - total_activos) if evento.cupo is not None else None
     esta_lleno = (cupos_disponibles == 0) if cupos_disponibles is not None else False
-
-    if esta_lleno and request.method == 'POST':
-        return render(request, 'participantes/inscripcion_publica_resultado.html', {
-            'estado': 'CUPO_AGOTADO',
-            'evento': evento,
-            'mensaje': f"Lo sentimos, el cupo de {evento.cupo} participantes para este evento ya se encuentra agotado."
-        }, status=400)
 
     if request.method == 'POST':
         form = InscripcionPublicaForm(request.POST)
@@ -822,19 +815,97 @@ def inscripcion_publica_view(request, id_evento):
 
             with transaction.atomic():
                 evento_lock = Evento.objects.select_for_update().get(pk=evento.pk)
+
+                # Buscar participante externo existente por documento o por correo
+                part_por_doc = Participante.objects.select_for_update().filter(
+                    documento=doc,
+                    usuario__isnull=True
+                ).first()
+                part_por_correo = Participante.objects.select_for_update().filter(
+                    correo__iexact=correo,
+                    usuario__isnull=True
+                ).first()
+
+                # Verificar si ya existe una inscripción ACTIVA asociada al documento o al correo en este evento
+                insc_activa = Inscripcion.objects.select_for_update().select_related('participante').filter(
+                    evento=evento_lock,
+                    estado=EstadoInscripcion.ACTIVA
+                ).filter(
+                    Q(participante__documento=doc) | Q(participante__correo__iexact=correo)
+                ).first()
+
+                if insc_activa:
+                    part_inscrito = insc_activa.participante
+                    # Seguridad anti-IDOR / anti-enumeración: exigir coincidencia exacta de documento Y correo registrado
+                    coincide_doc = (part_inscrito.documento.strip() == doc)
+                    coincide_correo = (part_inscrito.correo.strip().lower() == correo.lower())
+
+                    if not (coincide_doc and coincide_correo):
+                        # Limpiar cualquier sesión externa previa para no conceder acceso indebido
+                        for k in ['acceso_externo_id', 'acceso_externo_hash', 'acceso_externo_inscripcion_id', 'acceso_externo_evento_id']:
+                            request.session.pop(k, None)
+
+                        activos_actuales = evento_lock.inscripciones.filter(estado=EstadoInscripcion.ACTIVA).count()
+                        if evento_lock.cupo is not None and activos_actuales >= evento_lock.cupo:
+                            return render(request, 'participantes/inscripcion_publica_resultado.html', {
+                                'estado': 'CUPO_AGOTADO',
+                                'evento': evento_lock,
+                                'mensaje': f"Lo sentimos, el cupo de {evento_lock.cupo} participantes para este evento ya se encuentra agotado."
+                            }, status=400)
+
+                        return render(request, 'participantes/inscripcion_publica_resultado.html', {
+                            'estado': 'DATOS_NO_COINCIDEN',
+                            'evento': evento_lock,
+                            'mensaje': (
+                                "No fue posible validar o recuperar la inscripción porque los datos ingresados "
+                                "no coinciden con el registro existente para este evento."
+                            )
+                        }, status=403)
+
+                    # Coincidencia verificada de documento y correo: recuperar acceso sin duplicar inscripción ni alterar cupos
+                    acceso_ext = getattr(insc_activa, 'acceso_externo', None)
+                    if acceso_ext:
+                        raw_token, nuevo_hash = AccesoExternoInscripcion.generar_token()
+                        acceso_ext.token_hash = nuevo_hash
+                        acceso_ext.fecha_expiracion = timezone.now() + datetime.timedelta(days=30)
+                        acceso_ext.revocado = False
+                        acceso_ext.fecha_revocacion = None
+                        acceso_ext.ultimo_acceso = timezone.now()
+                        acceso_ext.save()
+                    else:
+                        acceso_ext, raw_token = AccesoExternoInscripcion.crear_para_inscripcion(insc_activa)
+
+                    # Validar que el acceso corresponde exactamente a la inscripción recuperada y establecer sesión
+                    if acceso_ext.inscripcion_id == insc_activa.pk:
+                        request.session['acceso_externo_id'] = acceso_ext.pk
+                        request.session['acceso_externo_hash'] = acceso_ext.token_hash
+                        request.session['acceso_externo_inscripcion_id'] = insc_activa.pk
+                        request.session['acceso_externo_evento_id'] = evento_lock.pk
+
+                    enviado = enviar_correo_confirmacion_externa(insc_activa, acceso_ext, raw_token, request)
+                    response = render(request, 'participantes/inscripcion_publica_resultado.html', {
+                        'estado': 'YA_INSCRITO',
+                        'evento': evento_lock,
+                        'participante': part_inscrito,
+                        'inscripcion': insc_activa,
+                        'correo_enviado': enviado,
+                        'acceso_disponible': (acceso_ext.inscripcion_id == insc_activa.pk),
+                        'mensaje': f"El participante {part_inscrito.nombres} {part_inscrito.apellidos} ya cuenta con una inscripción activa en este evento."
+                    })
+                    response['Referrer-Policy'] = 'no-referrer'
+                    return response
+
+                # Si no tiene inscripción activa en este evento, validar cupo disponible antes de inscribir o reactivar
                 activos_actuales = evento_lock.inscripciones.filter(estado=EstadoInscripcion.ACTIVA).count()
                 if evento_lock.cupo is not None and activos_actuales >= evento_lock.cupo:
                     return render(request, 'participantes/inscripcion_publica_resultado.html', {
                         'estado': 'CUPO_AGOTADO',
                         'evento': evento_lock,
-                        'mensaje': f"Lo sentimos, el cupo de {evento_lock.cupo} participantes para este evento se acaba de agotar."
+                        'mensaje': f"Lo sentimos, el cupo de {evento_lock.cupo} participantes para este evento ya se encuentra agotado."
                     }, status=400)
 
                 # Reutilizar participante externo existente o crear uno nuevo sin cuenta institucional
-                participante_ext = Participante.objects.select_for_update().filter(documento=doc, usuario__isnull=True).first()
-                if not participante_ext:
-                    participante_ext = Participante.objects.select_for_update().filter(correo__iexact=correo, usuario__isnull=True).first()
-
+                participante_ext = part_por_doc or part_por_correo
                 if not participante_ext:
                     participante_ext = Participante.objects.create(
                         usuario=None,
@@ -855,64 +926,52 @@ def inscripcion_publica_view(request, id_evento):
                     participante_ext.institucion = institucion
                     participante_ext.save()
 
-                # Verificar inscripción existente en este evento
+                # Verificar si existía inscripción previamente cancelada en este evento
                 inscripcion_ext = Inscripcion.objects.select_for_update().filter(
                     evento=evento_lock,
                     participante=participante_ext
                 ).first()
 
                 if inscripcion_ext:
-                    if inscripcion_ext.estado == EstadoInscripcion.ACTIVA:
-                        acceso_ext = getattr(inscripcion_ext, 'acceso_externo', None)
-                        if acceso_ext:
-                            raw_token, nuevo_hash = AccesoExternoInscripcion.generar_token()
-                            acceso_ext.token_hash = nuevo_hash
-                            acceso_ext.fecha_expiracion = timezone.now() + datetime.timedelta(days=30)
-                            acceso_ext.revocado = False
-                            acceso_ext.fecha_revocacion = None
-                            acceso_ext.save()
-                        else:
-                            acceso_ext, raw_token = AccesoExternoInscripcion.crear_para_inscripcion(inscripcion_ext)
-
-                        enviado = enviar_correo_confirmacion_externa(inscripcion_ext, acceso_ext, raw_token, request)
-                        return render(request, 'participantes/inscripcion_publica_resultado.html', {
-                            'estado': 'YA_INSCRITO',
-                            'evento': evento_lock,
-                            'participante': participante_ext,
-                            'inscripcion': inscripcion_ext,
-                            'correo_enviado': enviado,
-                            'mensaje': f"El participante {participante_ext.nombres} {participante_ext.apellidos} ya cuenta con una inscripción activa en este evento."
-                        })
+                    inscripcion_ext.estado = EstadoInscripcion.ACTIVA
+                    inscripcion_ext.save(update_fields=['estado'])
+                    acceso_ext = getattr(inscripcion_ext, 'acceso_externo', None)
+                    if acceso_ext:
+                        raw_token, nuevo_hash = AccesoExternoInscripcion.generar_token()
+                        acceso_ext.token_hash = nuevo_hash
+                        acceso_ext.fecha_expiracion = timezone.now() + datetime.timedelta(days=30)
+                        acceso_ext.revocado = False
+                        acceso_ext.fecha_revocacion = None
+                        acceso_ext.ultimo_acceso = timezone.now()
+                        acceso_ext.save()
                     else:
-                        inscripcion_ext.estado = EstadoInscripcion.ACTIVA
-                        inscripcion_ext.save(update_fields=['estado'])
-                        acceso_ext = getattr(inscripcion_ext, 'acceso_externo', None)
-                        if acceso_ext:
-                            raw_token, nuevo_hash = AccesoExternoInscripcion.generar_token()
-                            acceso_ext.token_hash = nuevo_hash
-                            acceso_ext.fecha_expiracion = timezone.now() + datetime.timedelta(days=30)
-                            acceso_ext.revocado = False
-                            acceso_ext.fecha_revocacion = None
-                            acceso_ext.save()
-                        else:
-                            acceso_ext, raw_token = AccesoExternoInscripcion.crear_para_inscripcion(inscripcion_ext)
+                        acceso_ext, raw_token = AccesoExternoInscripcion.crear_para_inscripcion(inscripcion_ext)
 
-                        Auditoria.objects.create(
-                            usuario=None,
-                            accion='REACTIVAR_INSCRIPCION_EXTERNO',
-                            modulo='PARTICIPANTES',
-                            registro_afectado=f"Inscripción ID {inscripcion_ext.pk} reactivada - Doc {doc} - Evento {evento_lock.pk}",
-                            ip=get_client_ip(request)
-                        )
-                        enviado = enviar_correo_confirmacion_externa(inscripcion_ext, acceso_ext, raw_token, request)
-                        return render(request, 'participantes/inscripcion_publica_resultado.html', {
-                            'estado': 'REACTIVADA',
-                            'evento': evento_lock,
-                            'participante': participante_ext,
-                            'inscripcion': inscripcion_ext,
-                            'correo_enviado': enviado,
-                            'mensaje': f"¡Inscripción reactivada con éxito para {participante_ext.nombres} {participante_ext.apellidos}!"
-                        })
+                    if acceso_ext.inscripcion_id == inscripcion_ext.pk:
+                        request.session['acceso_externo_id'] = acceso_ext.pk
+                        request.session['acceso_externo_hash'] = acceso_ext.token_hash
+                        request.session['acceso_externo_inscripcion_id'] = inscripcion_ext.pk
+                        request.session['acceso_externo_evento_id'] = evento_lock.pk
+
+                    Auditoria.objects.create(
+                        usuario=None,
+                        accion='REACTIVAR_INSCRIPCION_EXTERNO',
+                        modulo='PARTICIPANTES',
+                        registro_afectado=f"Inscripción ID {inscripcion_ext.pk} reactivada - Doc {doc} - Evento {evento_lock.pk}",
+                        ip=get_client_ip(request)
+                    )
+                    enviado = enviar_correo_confirmacion_externa(inscripcion_ext, acceso_ext, raw_token, request)
+                    response = render(request, 'participantes/inscripcion_publica_resultado.html', {
+                        'estado': 'REACTIVADA',
+                        'evento': evento_lock,
+                        'participante': participante_ext,
+                        'inscripcion': inscripcion_ext,
+                        'correo_enviado': enviado,
+                        'acceso_disponible': (acceso_ext.inscripcion_id == inscripcion_ext.pk),
+                        'mensaje': f"¡Inscripción reactivada con éxito para {participante_ext.nombres} {participante_ext.apellidos}!"
+                    })
+                    response['Referrer-Policy'] = 'no-referrer'
+                    return response
                 else:
                     nueva_insc = Inscripcion.objects.create(
                         evento=evento_lock,
@@ -920,6 +979,13 @@ def inscripcion_publica_view(request, id_evento):
                         estado=EstadoInscripcion.ACTIVA
                     )
                     acceso_ext, raw_token = AccesoExternoInscripcion.crear_para_inscripcion(nueva_insc)
+
+                    if acceso_ext.inscripcion_id == nueva_insc.pk:
+                        request.session['acceso_externo_id'] = acceso_ext.pk
+                        request.session['acceso_externo_hash'] = acceso_ext.token_hash
+                        request.session['acceso_externo_inscripcion_id'] = nueva_insc.pk
+                        request.session['acceso_externo_evento_id'] = evento_lock.pk
+
                     Auditoria.objects.create(
                         usuario=None,
                         accion='INSCRIBIR_EXTERNO',
@@ -928,14 +994,17 @@ def inscripcion_publica_view(request, id_evento):
                         ip=get_client_ip(request)
                     )
                     enviado = enviar_correo_confirmacion_externa(nueva_insc, acceso_ext, raw_token, request)
-                    return render(request, 'participantes/inscripcion_publica_resultado.html', {
+                    response = render(request, 'participantes/inscripcion_publica_resultado.html', {
                         'estado': 'EXITOSA',
                         'evento': evento_lock,
                         'participante': participante_ext,
                         'inscripcion': nueva_insc,
                         'correo_enviado': enviado,
+                        'acceso_disponible': (acceso_ext.inscripcion_id == nueva_insc.pk),
                         'mensaje': f"¡Inscripción exitosa! {participante_ext.nombres} {participante_ext.apellidos} ha quedado registrado(a) en '{evento_lock.nombre}'."
                     })
+                    response['Referrer-Policy'] = 'no-referrer'
+                    return response
     else:
         form = InscripcionPublicaForm()
 

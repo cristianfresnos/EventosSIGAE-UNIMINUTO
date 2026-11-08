@@ -47,16 +47,17 @@
 
         {% if esta_lleno %}
             <div class="alert alert-error" style="background: #fee2e2; border: 1px solid #f87171; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
-                <h3 style="color: #b91c1c; font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;">🚫 Cupo Agotado</h3>
-                <p style="color: #7f1d1d; margin: 0; font-size: 0.92rem;">
+                <h3 style="color: #b91c1c; font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;">🚫 Cupo Agotado para Nuevas Inscripciones</h3>
+                <p style="color: #7f1d1d; margin: 0 0 0.5rem 0; font-size: 0.92rem;">
                     Se ha alcanzado la capacidad máxima de asistentes configurada para este evento. No se admiten nuevas inscripciones.
                 </p>
-                <div style="margin-top: 1rem;">
-                    <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">← Volver al Evento</a>
-                </div>
+                <p style="color: #0369a1; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 0.65rem; margin: 0.75rem 0 0 0; font-size: 0.88rem;">
+                    ℹ️ <strong>¿Ya te inscribiste previamente?</strong> Ingresa exactamente tu documento y correo electrónico registrados en el formulario inferior para recuperar tu acceso y obtener tu pase y código QR de asistencia.
+                </p>
             </div>
-        {% else %}
-            <form method="post" novalidate class="custom-form">
+        {% endif %}
+
+        <form method="post" novalidate class="custom-form">
                 {% csrf_token %}
 
                 {% if form.non_field_errors %}
@@ -167,11 +168,10 @@
                 <div class="form-footer-actions" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem;">
                     <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">← Cancelar y Volver</a>
                     <button type="submit" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 1rem; font-weight: 600;">
-                        ✓ Confirmar mi Inscripción
+                        {% if esta_lleno %}🔍 Recuperar mi Inscripción y Pase QR{% else %}✓ Confirmar mi Inscripción{% endif %}
                     </button>
                 </div>
-            </form>
-        {% endif %}
+        </form>
 
         <div class="auth-footer" style="margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid #e2e8f0; text-align: center; font-size: 0.88rem; color: #64748b;">
             <p style="margin: 0 0 0.4rem 0;">¿Perteneces a la comunidad UNIMINUTO (estudiante, docente o administrativo)?</p>

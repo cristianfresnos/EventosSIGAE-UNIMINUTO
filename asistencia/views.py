@@ -79,20 +79,30 @@ def pase_digital(request, id_inscripcion):
         ):
             es_propietario = True
     elif request.session.get('acceso_externo_id'):
-        acceso = AccesoExternoInscripcion.objects.filter(
-            pk=request.session['acceso_externo_id'],
-            revocado=False,
-            fecha_expiracion__gte=timezone.now()
-        ).first()
-        if acceso and acceso.inscripcion_id == inscripcion.pk:
+        filtros_acceso = {
+            'pk': request.session['acceso_externo_id'],
+            'revocado': False,
+            'fecha_expiracion__gte': timezone.now(),
+        }
+        if request.session.get('acceso_externo_hash'):
+            filtros_acceso['token_hash'] = request.session['acceso_externo_hash']
+        acceso = AccesoExternoInscripcion.objects.filter(**filtros_acceso).first()
+        if acceso and acceso.inscripcion_id == inscripcion.pk and acceso.es_valido:
             es_propietario = True
-    elif token_param:
-        try:
-            payload = decodificar_token_qr(token_param)
-            if payload.get('ins') == inscripcion.pk and payload.get('evt') == inscripcion.evento_id:
-                es_propietario = True
-        except (signing.BadSignature, signing.SignatureExpired):
-            es_propietario = False
+
+    if not es_propietario and token_param:
+        acceso_tok = AccesoExternoInscripcion.validar_token(token_param)
+        if acceso_tok and acceso_tok.inscripcion_id == inscripcion.pk:
+            es_propietario = True
+            request.session['acceso_externo_id'] = acceso_tok.pk
+            request.session['acceso_externo_hash'] = acceso_tok.token_hash
+        else:
+            try:
+                payload = decodificar_token_qr(token_param)
+                if payload.get('ins') == inscripcion.pk and payload.get('evt') == inscripcion.evento_id:
+                    es_propietario = True
+            except (signing.BadSignature, signing.SignatureExpired):
+                es_propietario = False
 
     if not es_propietario:
         if not request.user.is_authenticated:
@@ -139,13 +149,31 @@ def descargar_qr_imagen(request, id_inscripcion):
             or tiene_permiso_evento(request.user, inscripcion.evento)
         ):
             es_propietario = True
-    elif token_param:
-        try:
-            payload = decodificar_token_qr(token_param)
-            if payload.get('ins') == inscripcion.pk and payload.get('evt') == inscripcion.evento_id:
-                es_propietario = True
-        except (signing.BadSignature, signing.SignatureExpired):
-            es_propietario = False
+    elif request.session.get('acceso_externo_id'):
+        filtros_acceso = {
+            'pk': request.session['acceso_externo_id'],
+            'revocado': False,
+            'fecha_expiracion__gte': timezone.now(),
+        }
+        if request.session.get('acceso_externo_hash'):
+            filtros_acceso['token_hash'] = request.session['acceso_externo_hash']
+        acceso = AccesoExternoInscripcion.objects.filter(**filtros_acceso).first()
+        if acceso and acceso.inscripcion_id == inscripcion.pk and acceso.es_valido:
+            es_propietario = True
+
+    if not es_propietario and token_param:
+        acceso_tok = AccesoExternoInscripcion.validar_token(token_param)
+        if acceso_tok and acceso_tok.inscripcion_id == inscripcion.pk:
+            es_propietario = True
+            request.session['acceso_externo_id'] = acceso_tok.pk
+            request.session['acceso_externo_hash'] = acceso_tok.token_hash
+        else:
+            try:
+                payload = decodificar_token_qr(token_param)
+                if payload.get('ins') == inscripcion.pk and payload.get('evt') == inscripcion.evento_id:
+                    es_propietario = True
+            except (signing.BadSignature, signing.SignatureExpired):
+                es_propietario = False
 
     if not es_propietario:
         if not request.user.is_authenticated:
@@ -182,26 +210,32 @@ def qr_dinamico(request, id_inscripcion):
         ):
             es_autorizado = True
     elif request.session.get('acceso_externo_id'):
-        acceso = AccesoExternoInscripcion.objects.filter(
-            pk=request.session['acceso_externo_id'],
-            revocado=False,
-            fecha_expiracion__gte=timezone.now()
-        ).first()
-        if acceso and acceso.inscripcion_id == inscripcion.pk:
+        filtros_acceso = {
+            'pk': request.session['acceso_externo_id'],
+            'revocado': False,
+            'fecha_expiracion__gte': timezone.now(),
+        }
+        if request.session.get('acceso_externo_hash'):
+            filtros_acceso['token_hash'] = request.session['acceso_externo_hash']
+        acceso = AccesoExternoInscripcion.objects.filter(**filtros_acceso).first()
+        if acceso and acceso.inscripcion_id == inscripcion.pk and acceso.es_valido:
             es_autorizado = True
-    else:
+
+    if not es_autorizado:
         raw_token = (request.GET.get('token') or request.GET.get('token_acceso') or '').strip()
         if raw_token:
-            import hashlib
-            th = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
-            acceso = AccesoExternoInscripcion.objects.filter(
-                token_hash=th,
-                revocado=False,
-                fecha_expiracion__gte=timezone.now()
-            ).first()
+            acceso = AccesoExternoInscripcion.validar_token(raw_token)
             if acceso and acceso.inscripcion_id == inscripcion.pk:
                 es_autorizado = True
                 request.session['acceso_externo_id'] = acceso.pk
+                request.session['acceso_externo_hash'] = acceso.token_hash
+            else:
+                try:
+                    payload = decodificar_token_qr(raw_token)
+                    if payload.get('ins') == inscripcion.pk and payload.get('evt') == inscripcion.evento_id:
+                        es_autorizado = True
+                except (signing.BadSignature, signing.SignatureExpired):
+                    pass
 
     if not es_autorizado:
         return JsonResponse({
@@ -629,12 +663,17 @@ def salida_evento_publica(request, id_evento):
 
     inscripcion_externa = None
     if request.session.get('acceso_externo_id'):
+        filtros_acceso = {
+            'pk': request.session['acceso_externo_id'],
+            'revocado': False,
+            'fecha_expiracion__gte': timezone.now(),
+        }
+        if request.session.get('acceso_externo_hash'):
+            filtros_acceso['token_hash'] = request.session['acceso_externo_hash']
         acceso = AccesoExternoInscripcion.objects.filter(
-            pk=request.session['acceso_externo_id'],
-            revocado=False,
-            fecha_expiracion__gte=timezone.now()
+            **filtros_acceso
         ).select_related('inscripcion', 'inscripcion__participante', 'inscripcion__asistencia').first()
-        if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
+        if acceso and acceso.es_valido and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
             inscripcion_externa = acceso.inscripcion
 
     if not inscripcion_externa and not request.user.is_authenticated:
@@ -644,6 +683,7 @@ def salida_evento_publica(request, id_evento):
             if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
                 inscripcion_externa = acceso.inscripcion
                 request.session['acceso_externo_id'] = acceso.pk
+                request.session['acceso_externo_hash'] = acceso.token_hash
 
     inscripcion_target = inscripcion_usuario or inscripcion_externa
     resultado = None
@@ -951,23 +991,19 @@ def registrar_salida_participante(request, id_evento):
             estado=EstadoInscripcion.ACTIVA
         ).select_related('participante', 'asistencia').first()
     elif request.session.get('acceso_externo_id'):
-        acceso_id = request.session['acceso_externo_id']
+        filtros_acceso = {
+            'pk': request.session['acceso_externo_id'],
+            'revocado': False,
+            'fecha_expiracion__gte': timezone.now(),
+        }
+        if request.session.get('acceso_externo_hash'):
+            filtros_acceso['token_hash'] = request.session['acceso_externo_hash']
         acceso = AccesoExternoInscripcion.objects.filter(
-            pk=acceso_id,
-            revocado=False,
-            fecha_expiracion__gte=timezone.now()
+            **filtros_acceso
         ).select_related('inscripcion', 'inscripcion__participante', 'inscripcion__asistencia').first()
-        if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
+        if acceso and acceso.es_valido and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
             inscripcion = acceso.inscripcion
 
-    if not inscripcion and not request.user.is_authenticated:
-        token_acceso = request.GET.get('token')
-        if token_acceso:
-            acceso = AccesoExternoInscripcion.validar_token(token_acceso)
-            if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
-                inscripcion = acceso.inscripcion
-                request.session['acceso_externo_id'] = acceso.pk
-    
     if not inscripcion and not request.user.is_authenticated:
         token_acceso = request.POST.get('token_acceso') or request.GET.get('token')
         if token_acceso:
@@ -975,6 +1011,7 @@ def registrar_salida_participante(request, id_evento):
             if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
                 inscripcion = acceso.inscripcion
                 request.session['acceso_externo_id'] = acceso.pk
+                request.session['acceso_externo_hash'] = acceso.token_hash
 
     if not inscripcion:
         return JsonResponse({
@@ -1065,13 +1102,17 @@ def escanear_salida(request, id_evento):
             estado=EstadoInscripcion.ACTIVA
         ).select_related('participante', 'asistencia').first()
     elif request.session.get('acceso_externo_id'):
-        acceso_id = request.session['acceso_externo_id']
+        filtros_acceso = {
+            'pk': request.session['acceso_externo_id'],
+            'revocado': False,
+            'fecha_expiracion__gte': timezone.now(),
+        }
+        if request.session.get('acceso_externo_hash'):
+            filtros_acceso['token_hash'] = request.session['acceso_externo_hash']
         acceso = AccesoExternoInscripcion.objects.filter(
-            pk=acceso_id,
-            revocado=False,
-            fecha_expiracion__gte=timezone.now()
+            **filtros_acceso
         ).select_related('inscripcion', 'inscripcion__participante', 'inscripcion__asistencia').first()
-        if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
+        if acceso and acceso.es_valido and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
             inscripcion = acceso.inscripcion
 
     if not inscripcion and not request.user.is_authenticated:
@@ -1081,6 +1122,7 @@ def escanear_salida(request, id_evento):
             if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
                 inscripcion = acceso.inscripcion
                 request.session['acceso_externo_id'] = acceso.pk
+                request.session['acceso_externo_hash'] = acceso.token_hash
 
     if not inscripcion:
         if not request.user.is_authenticated:

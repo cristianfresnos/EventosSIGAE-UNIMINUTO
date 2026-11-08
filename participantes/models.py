@@ -530,6 +530,28 @@ class AccesoExternoInscripcion(models.Model):
         calculated = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
         return hmac.compare_digest(self.token_hash, calculated)
 
+    @classmethod
+    def validar_token(cls, raw_token):
+        """
+        Busca y valida de forma segura un AccesoExternoInscripcion a partir del token en plano.
+        Retorna la instancia válida y vigente, o None si el token es inválido, revocado o expirado.
+        """
+        if not raw_token or not isinstance(raw_token, str):
+            return None
+        token_clean = raw_token.strip()
+        if len(token_clean) < 10:
+            return None
+        token_hash = hashlib.sha256(token_clean.encode('utf-8')).hexdigest()
+        acceso = (
+            cls.objects
+            .select_related('inscripcion', 'inscripcion__evento', 'inscripcion__participante')
+            .filter(token_hash=token_hash)
+            .first()
+        )
+        if acceso and acceso.verificar_token(token_clean):
+            return acceso
+        return None
+
     @property
     def es_valido(self):
         """Indica si el acceso está habilitado y vigente."""

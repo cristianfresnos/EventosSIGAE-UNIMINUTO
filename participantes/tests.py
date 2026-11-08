@@ -2219,3 +2219,260 @@ class InscripcionPublicaExternosTests(TestCase):
         self.assertEqual(Participante.objects.filter(documento='10998877').count(), 1)
         self.assertEqual(Inscripcion.objects.filter(evento=self.evento_abierta, participante__documento='10998877').count(), 1)
 
+
+class Fase1AccesoInmediatoYRecuperacionExternaTests(TestCase):
+    """
+    Pruebas obligatorias de la Fase 1: Acceso inmediato tras inscripción pública,
+    recuperación segura cuando el cupo está lleno, protección anti-IDOR, y
+    funcionamiento del pase digital y código QR dinámico sin servicio de correo.
+    """
+    def setUp(self):
+        self.client = Client()
+        self.rol_docente = Rol.objects.create(nombre='Docente')
+        self.organizador = Usuario.objects.create_user(
+            username='docente_fase1',
+            email='docente.fase1@uniminuto.edu.co',
+            password='Password123*',
+            documento='40404040',
+            nombres='Docente',
+            apellidos='FaseUno',
+            rol=self.rol_docente
+        )
+        self.categoria = CategoriaEvento.objects.create(nombre='Taller Mixto')
+        self.evento_un_cupo = Evento.objects.create(
+            nombre='Taller Mixto Cupo Único',
+            descripcion='Evento de prueba con capacidad de 1 participante.',
+            fecha=datetime.date(2026, 12, 18),
+            hora_inicio=datetime.time(8, 0),
+            hora_fin=datetime.time(12, 0),
+            lugar='Sala de Innovación',
+            modalidad=ModalidadEvento.HIBRIDA,
+            modalidad_inscripcion=ModalidadInscripcion.MIXTA,
+            cupo=1,
+            estado=EstadoEvento.PUBLICADO,
+            categoria=self.categoria,
+            organizador=self.organizador
+        )
+        self.datos_participante_1 = {
+            'documento': '1020304050',
+            'nombres': 'Andrés',
+            'apellidos': 'Externo',
+            'correo': 'andres.externo@correo.org',
+            'telefono': '3001112233',
+            'institucion': 'Empresa Externa S.A.',
+            'acepta_politica_tratamiento': 'True',
+        }
+        self.datos_participante_2 = {
+            'documento': '9080706050',
+            'nombres': 'Beatriz',
+            'apellidos': 'Visitante',
+            'correo': 'beatriz.visitante@correo.org',
+            'telefono': '3104445566',
+            'institucion': 'Consultora Aliada',
+            'acepta_politica_tratamiento': 'True',
+        }
+
+    def test_01_evento_un_cupo_inscripcion_y_acceso_inmediato_portal_personal(self):
+        """1. Evento con 1 cupo: el primer participante se inscribe y obtiene acceso inmediato a su portal personal."""
+        url_reg = reverse('participantes:inscripcion_publica', kwargs={'id_evento': self.evento_un_cupo.pk})
+        resp = self.client.post(url_reg, self.datos_participante_1)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['estado'], 'EXITOSA')
+        self.assertTrue(resp.context['acceso_disponible'])
+        self.assertContains(resp, 'VER MI PASE Y CÓDIGO QR DE ASISTENCIA')
+        self.assertContains(resp, reverse('participantes:ver_inscripcion_externa'))
+
+        # Verificar que la sesión externa quedó establecida y corresponde a la inscripción creada
+        insc = Inscripcion.objects.get(evento=self.evento_un_cupo, participante__documento='1020304050')
+        acceso = AccesoExternoInscripcion.objects.get(inscripcion=insc)
+        self.assertEqual(self.client.session.get('acceso_externo_id'), acceso.pk)
+        self.assertEqual(self.client.session.get('acceso_externo_hash'), acceso.token_hash)
+
+        # Acceder inmediatamente al portal personal sin necesidad de abrir el correo
+        resp_portal = self.client.get(reverse('participantes:ver_inscripcion_externa'))
+        self.assertEqual(resp_portal.status_code, 200)
+        self.assertContains(resp_portal, 'Andrés Externo')
+        self.assertContains(resp_portal, 'Taller Mixto Cupo Único')
+        self.assertContains(resp_portal, 'data:image/png;base64,')
+        self.assertNotContains(resp_portal, '?token=')
+
+    def test_02_fallo_correo_permite_acceder_a_pase_y_qr(self):
+        """2. Simular fallo de correo: el participante igualmente accede a su pase y QR individual."""
+        url_reg = reverse('participantes:inscripcion_publica', kwargs={'id_evento': self.evento_un_cupo.pk})
+        with patch('participantes.views.enviar_correo_confirmacion_externa', return_value=False):
+            resp = self.client.post(url_reg, self.datos_participante_1)
+            self.assertEqual(resp.status_code, 200)
+            self.assertFalse(resp.context['correo_enviado'])
+            self.assertTrue(resp.context['acceso_disponible'])
+            self.assertContains(resp, 'VER MI PASE Y CÓDIGO QR DE ASISTENCIA')
+
+        # El participante entra al portal personal y visualiza su QR
+        resp_portal = self.client.get(reverse('participantes:ver_inscripcion_externa'))
+        self.assertEqual(resp_portal.status_code, 200)
+        self.assertIsNotNone(resp_portal.context['qr_base64'])
+        self.assertTrue(len(resp_portal.context['qr_base64']) > 50)
+
+    def test_03_cupo_lleno_mismo_participante_recupera_acceso_sin_duplicar(self):
+        """3. Evento con cupo lleno: el mismo participante, con documento y correo coincidentes, recupera su acceso sin duplicar la inscripción."""
+        url_reg = reverse('participantes:inscripcion_publica', kwargs={'id_evento': self.evento_un_cupo.pk})
+        self.client.post(url_reg, self.datos_participante_1)
+        self.assertEqual(Inscripcion.objects.filter(evento=self.evento_un_cupo, estado=EstadoInscripcion.ACTIVA).count(), 1)
+
+        # Nuevo cliente (simulando otro dispositivo o sesión perdida cuando el cupo ya está lleno)
+        nuevo_cliente = Client()
+        resp_get = nuevo_cliente.get(url_reg)
+        self.assertEqual(resp_get.status_code, 200)
+        self.assertTrue(resp_get.context['esta_lleno'])
+        self.assertContains(resp_get, 'Recuperar mi Inscripción y Pase QR')
+
+        with patch('participantes.views.enviar_correo_confirmacion_externa', return_value=False):
+            resp_recup = nuevo_cliente.post(url_reg, self.datos_participante_1)
+            self.assertEqual(resp_recup.status_code, 200)
+            self.assertEqual(resp_recup.context['estado'], 'YA_INSCRITO')
+            self.assertTrue(resp_recup.context['acceso_disponible'])
+            self.assertContains(resp_recup, 'VER MI PASE Y CÓDIGO QR DE ASISTENCIA')
+
+        # No se duplicó la inscripción ni se alteró el cupo ocupado (sigue siendo 1)
+        self.assertEqual(Inscripcion.objects.filter(evento=self.evento_un_cupo).count(), 1)
+        self.assertEqual(Inscripcion.objects.filter(evento=self.evento_un_cupo, estado=EstadoInscripcion.ACTIVA).count(), 1)
+
+        # El nuevo cliente tiene sesión activa y puede ver su portal y QR
+        resp_portal = nuevo_cliente.get(reverse('participantes:ver_inscripcion_externa'))
+        self.assertEqual(resp_portal.status_code, 200)
+        self.assertContains(resp_portal, 'Andrés Externo')
+        self.assertContains(resp_portal, 'data:image/png;base64,')
+
+    def test_04_cupo_lleno_segundo_participante_rechazado(self):
+        """4. Evento con cupo lleno: un segundo participante no puede inscribirse."""
+        url_reg = reverse('participantes:inscripcion_publica', kwargs={'id_evento': self.evento_un_cupo.pk})
+        self.client.post(url_reg, self.datos_participante_1)
+
+        cliente_2 = Client()
+        resp_2 = cliente_2.post(url_reg, self.datos_participante_2)
+        self.assertEqual(resp_2.status_code, 400)
+        self.assertEqual(resp_2.context['estado'], 'CUPO_AGOTADO')
+        self.assertFalse(Inscripcion.objects.filter(evento=self.evento_un_cupo, participante__documento='9080706050').exists())
+        self.assertIsNone(cliente_2.session.get('acceso_externo_id'))
+
+    def test_05_documento_correcto_y_correo_incorrecto_rechaza_acceso_y_no_modifica_datos(self):
+        """5. Documento correcto y correo incorrecto (o viceversa): el acceso es rechazado y no se modifican datos."""
+        url_reg = reverse('participantes:inscripcion_publica', kwargs={'id_evento': self.evento_un_cupo.pk})
+        self.client.post(url_reg, self.datos_participante_1)
+
+        # Intento con documento correcto pero correo impostor en evento lleno
+        cliente_atacante = Client()
+        datos_correo_falso = dict(
+            self.datos_participante_1,
+            nombres='Atacante',
+            correo='atacante@malicioso.org'
+        )
+        resp_falso_1 = cliente_atacante.post(url_reg, datos_correo_falso)
+        self.assertIn(resp_falso_1.status_code, [400, 403])
+        self.assertIsNone(cliente_atacante.session.get('acceso_externo_id'))
+
+        # Verificar también cuando hay cupo disponible (cupo=5): debe devolver 403 DATOS_NO_COINCIDEN
+        self.evento_un_cupo.cupo = 5
+        self.evento_un_cupo.save(update_fields=['cupo'])
+
+        resp_falso_2 = cliente_atacante.post(url_reg, datos_correo_falso)
+        self.assertEqual(resp_falso_2.status_code, 403)
+        self.assertEqual(resp_falso_2.context['estado'], 'DATOS_NO_COINCIDEN')
+        self.assertIsNone(cliente_atacante.session.get('acceso_externo_id'))
+
+        # Intento inverso: correo correcto pero documento distinto
+        datos_doc_falso = dict(
+            self.datos_participante_1,
+            documento='9999999999',
+            nombres='Atacante'
+        )
+        resp_falso_3 = cliente_atacante.post(url_reg, datos_doc_falso)
+        self.assertEqual(resp_falso_3.status_code, 403)
+        self.assertEqual(resp_falso_3.context['estado'], 'DATOS_NO_COINCIDEN')
+        self.assertIsNone(cliente_atacante.session.get('acceso_externo_id'))
+
+        # Verificar que los datos originales del participante inscrito NO fueron modificados
+        part_orig = Participante.objects.get(documento='1020304050')
+        self.assertEqual(part_orig.correo, 'andres.externo@correo.org')
+        self.assertEqual(part_orig.nombres, 'Andrés')
+
+    def test_06_anti_idor_participante_no_puede_acceder_pase_ajeno(self):
+        """6. Un participante no puede acceder al pase o QR de otra persona manipulando URLs."""
+        self.evento_un_cupo.cupo = 2
+        self.evento_un_cupo.save(update_fields=['cupo'])
+
+        url_reg = reverse('participantes:inscripcion_publica', kwargs={'id_evento': self.evento_un_cupo.pk})
+        # Inscribir participante 1 en client 1
+        c1 = Client()
+        c1.post(url_reg, self.datos_participante_1)
+        insc_1 = Inscripcion.objects.get(evento=self.evento_un_cupo, participante__documento='1020304050')
+
+        # Inscribir participante 2 en client 2
+        c2 = Client()
+        c2.post(url_reg, self.datos_participante_2)
+        insc_2 = Inscripcion.objects.get(evento=self.evento_un_cupo, participante__documento='9080706050')
+
+        # Participante 2 intenta acceder al pase digital, imagen QR y QR dinámico de la inscripción 1
+        resp_pase_ajeno = c2.get(reverse('asistencia:pase_digital', kwargs={'id_inscripcion': insc_1.pk}))
+        self.assertNotEqual(resp_pase_ajeno.status_code, 200)
+
+        resp_img_ajena = c2.get(reverse('asistencia:qr_imagen', kwargs={'id_inscripcion': insc_1.pk}))
+        self.assertNotEqual(resp_img_ajena.status_code, 200)
+
+        resp_qr_din_ajeno = c2.get(reverse('asistencia:qr_dinamico', kwargs={'id_inscripcion': insc_1.pk}))
+        self.assertEqual(resp_qr_din_ajeno.status_code, 403)
+
+        # Pero Participante 2 sí accede a los suyos propios (insc_2)
+        self.assertEqual(c2.get(reverse('asistencia:pase_digital', kwargs={'id_inscripcion': insc_2.pk})).status_code, 200)
+
+    def test_07_qr_individual_dinamico_se_renueva_y_registra_asistencia(self):
+        """7. El QR individual se renueva mediante qr_dinamico y funciona para registrar asistencia."""
+        url_reg = reverse('participantes:inscripcion_publica', kwargs={'id_evento': self.evento_un_cupo.pk})
+        self.client.post(url_reg, self.datos_participante_1)
+        insc = Inscripcion.objects.get(evento=self.evento_un_cupo, participante__documento='1020304050')
+
+        # Renovar QR dinámico usando la sesión externa establecida
+        url_qr_din = reverse('asistencia:qr_dinamico', kwargs={'id_inscripcion': insc.pk})
+        resp_qr = self.client.get(url_qr_din, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(resp_qr.status_code, 200)
+        data = resp_qr.json()
+        self.assertTrue(data['exito'])
+        self.assertTrue(data['token'])
+        self.assertTrue(data['qr_base64'])
+
+        # El docente organizador escanea el token QR en control_asistencia para registrar llegada
+        cliente_docente = Client()
+        cliente_docente.force_login(self.organizador)
+        url_checkin = reverse('asistencia:control_asistencia', kwargs={'id_evento': self.evento_un_cupo.pk})
+        resp_checkin = cliente_docente.post(
+            url_checkin,
+            {'accion': 'qr', 'token_qr': data['token']},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(resp_checkin.status_code, 200)
+        checkin_data = resp_checkin.json()
+        self.assertTrue(checkin_data['exito'])
+
+        insc.refresh_from_db()
+        self.assertTrue(insc.asistio)
+        self.assertTrue(Asistencia.objects.filter(inscripcion=insc).exists())
+
+    def test_08_descarga_pase_digital_y_qr_imagen_funciona_con_sesion_externa(self):
+        """8. La visualización del pase digital y la descarga de la imagen QR (PNG) funcionan con la sesión externa."""
+        url_reg = reverse('participantes:inscripcion_publica', kwargs={'id_evento': self.evento_un_cupo.pk})
+        self.client.post(url_reg, self.datos_participante_1)
+        insc = Inscripcion.objects.get(evento=self.evento_un_cupo, participante__documento='1020304050')
+
+        # Visualizar pase digital imprimible
+        resp_pase = self.client.get(reverse('asistencia:pase_digital', kwargs={'id_inscripcion': insc.pk}))
+        self.assertEqual(resp_pase.status_code, 200)
+        self.assertContains(resp_pase, 'PASE DIGITAL DE ASISTENCIA')
+        self.assertContains(resp_pase, 'Andrés Externo')
+
+        # Descargar imagen QR PNG directamente con la sesión externa (sin ?token=)
+        resp_png = self.client.get(reverse('asistencia:qr_imagen', kwargs={'id_inscripcion': insc.pk}))
+        self.assertEqual(resp_png.status_code, 200)
+        self.assertEqual(resp_png['Content-Type'], 'image/png')
+        self.assertIn('attachment', resp_png['Content-Disposition'])
+        self.assertTrue(len(resp_png.content) > 100)
+
+
