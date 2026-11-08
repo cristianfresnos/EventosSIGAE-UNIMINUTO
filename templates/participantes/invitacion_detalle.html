@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+
+{% block title %}Invitación: {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <span class="current">Invitación Institucional</span>
+</div>
+
+<div class="invitation-layout" style="max-width: 800px; margin: 0 auto; padding: 1rem 0;">
+    <!-- Tarjeta Principal de la Invitación -->
+    <div class="invitation-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+        <!-- Encabezado Institucional -->
+        <div style="background: #002d62; color: #ffffff; padding: 2rem; text-align: center;">
+            <span class="badge" style="background: #0284c7; color: #ffffff; font-size: 0.85rem; padding: 0.35rem 0.75rem; border-radius: 20px; display: inline-block; margin-bottom: 0.75rem;">
+                Invitación Personal
+            </span>
+            <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0 0 0.5rem 0; letter-spacing: -0.5px;">
+                {{ evento.nombre }}
+            </h1>
+            <p style="color: #93c5fd; margin: 0; font-size: 0.95rem;">
+                Invitación emitida por <strong>{{ organizador.get_full_name|default:organizador.username }}</strong> — Corporación Universitaria Minuto de Dios
+            </p>
+        </div>
+
+        <div style="padding: 2rem;">
+            <!-- Destinatario -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.75rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                    <div>
+                        <span style="font-size: 0.8rem; text-transform: uppercase; color: #64748b; font-weight: 600; letter-spacing: 0.5px;">Invitado a nombre de:</span>
+                        <div style="font-size: 1.1rem; font-weight: 600; color: #0f172a;">{{ invitacion.nombres }} {{ invitacion.apellidos }}</div>
+                        <div style="color: #475569; font-size: 0.9rem;">{{ invitacion.correo }}</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="font-size: 0.8rem; text-transform: uppercase; color: #64748b; font-weight: 600; letter-spacing: 0.5px;">Fecha límite para responder:</span>
+                        <div style="font-weight: 600; color: #d97706; font-size: 0.95rem;">{{ invitacion.fecha_expiracion|date:"l, d \d\e F \d\e Y — H:i" }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Descripción y Detalles del Evento -->
+            <div style="margin-bottom: 2rem;">
+                <h3 style="font-size: 1.15rem; font-weight: 600; color: #002d62; margin-bottom: 0.75rem;">
+                    Acerca de este evento
+                </h3>
+                <p style="color: #334155; line-height: 1.6; font-size: 0.95rem; margin-bottom: 1.5rem;">
+                    {{ evento.descripcion|linebreaks }}
+                </p>
+
+                <div class="info-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                    <div class="info-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
+                        <span style="font-size: 0.8rem; color: #64748b; display: block;">Fecha</span>
+                        <strong style="color: #0f172a; font-size: 0.95rem;">{{ evento.fecha|date:"d/m/Y" }}</strong>
+                    </div>
+
+                    <div class="info-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
+                        <span style="font-size: 0.8rem; color: #64748b; display: block;">Horario</span>
+                        <strong style="color: #0f172a; font-size: 0.95rem;">{{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</strong>
+                    </div>
+
+                    <div class="info-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
+                        <span style="font-size: 0.8rem; color: #64748b; display: block;">Modalidad</span>
+                        <strong style="color: #0f172a; font-size: 0.95rem;">{{ evento.get_modalidad_display }}</strong>
+                    </div>
+
+                    <div class="info-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
+                        <span style="font-size: 0.8rem; color: #64748b; display: block;">Lugar / Sede</span>
+                        <strong style="color: #0f172a; font-size: 0.95rem;">{{ evento.lugar }}</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sección de Decisión y Autenticación -->
+            <div style="border-top: 2px solid #e2e8f0; padding-top: 1.75rem;">
+                {% if not user.is_authenticated %}
+                    <div class="alert alert-info" style="margin-bottom: 1.5rem;">
+                        <span class="alert-icon">ℹ</span>
+                        <div class="alert-text">
+                            <strong>Identificación requerida:</strong>
+                            Para confirmar o rechazar esta invitación, debes identificarte en el sistema. Puedes iniciar sesión con tus credenciales institucionales o registrar una cuenta si aún no cuentas con una.
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                        <a href="{% url 'usuarios:login' %}?next={% url 'participantes:ver_invitacion' %}" class="btn btn-primary" style="padding: 0.75rem 2rem;">
+                            Iniciar Sesión
+                        </a>
+                        <a href="{% url 'usuarios:registro' %}?next={% url 'participantes:ver_invitacion' %}" class="btn btn-secondary" style="padding: 0.75rem 2rem;">
+                            Crear una Cuenta
+                        </a>
+                    </div>
+
+                {% elif not coincide_correo %}
+                    <div class="alert alert-warning" style="margin-bottom: 1.5rem;">
+                        <span class="alert-icon">⚠</span>
+                        <div class="alert-text">
+                            <strong>Discrepancia de cuenta institucional:</strong><br>
+                            Esta invitación fue enviada a <strong>{{ invitacion.correo }}</strong>, pero actualmente has iniciado sesión como <strong>{{ user.email }}</strong>.<br>
+                            Por seguridad institucional, no es posible aceptar ni rechazar una invitación desde una cuenta con dirección de correo electrónico distinta.
+                        </div>
+                    </div>
+
+                    <div style="text-align: center; margin-top: 1rem;">
+                        <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 0.75rem;">
+                            ¿Deseas responder con la cuenta correcta?
+                        </p>
+                        <a href="{% url 'usuarios:logout' %}" class="btn btn-secondary">
+                            Cerrar Sesión e Ingresar con Otra Cuenta
+                        </a>
+                    </div>
+
+                {% elif not correo_verificado %}
+                    <!-- Usuario Autenticado, Correo Coincidente, pero NO Verificado -->
+                    <div class="alert alert-warning" style="margin-bottom: 1.5rem;">
+                        <span class="alert-icon">⚠</span>
+                        <div class="alert-text">
+                            <strong>Verificación de correo requerida:</strong><br>
+                            Tu cuenta coincide con <strong>{{ user.email }}</strong>, pero la dirección de correo aún no ha sido verificada.<br>
+                            Para garantizar la legitimidad institucional y prevenir suplantaciones, debes verificar tu cuenta antes de aceptar la invitación.
+                        </div>
+                    </div>
+
+                    <div style="text-align: center; margin-bottom: 1.5rem;">
+                        <a href="{% url 'usuarios:solicitar_verificacion' %}?next={% url 'participantes:ver_invitacion' %}" class="btn btn-primary">
+                            ✉️ Enviar Correo de Verificación a {{ user.email }}
+                        </a>
+                    </div>
+
+                    <form method="post" action="{% url 'participantes:responder_invitacion' %}" style="display: flex; gap: 1.25rem; justify-content: center; flex-wrap: wrap;">
+                        {% csrf_token %}
+                        <button type="button" class="btn btn-secondary btn-lg" disabled style="opacity: 0.6; cursor: not-allowed;" title="Debes verificar tu correo institucional antes de aceptar">
+                            ✓ Aceptar Invitación (Requiere Correo Verificado)
+                        </button>
+                        <button type="submit" name="accion" value="rechazar" class="btn btn-outline-danger btn-lg" onclick="return confirm('¿Seguro que deseas rechazar esta invitación al evento?');">
+                            ✕ Rechazar Invitación
+                        </button>
+                    </form>
+
+                {% else %}
+                    <!-- Usuario Autenticado, Correo Coincidente y Verificado -->
+                    <div class="alert alert-success" style="margin-bottom: 1.5rem;">
+                        <span class="alert-icon">✓</span>
+                        <div class="alert-text">
+                            <strong>Autenticación y correo verificados:</strong> Has iniciado sesión como <strong>{{ user.email }}</strong> (verificado). Puedes proceder a confirmar o declinar tu asistencia a continuación.
+                        </div>
+                    </div>
+
+                    <form method="post" action="{% url 'participantes:responder_invitacion' %}" style="display: flex; gap: 1.25rem; justify-content: center; flex-wrap: wrap;">
+                        {% csrf_token %}
+                        <button type="submit" name="accion" value="aceptar" class="btn btn-primary btn-lg" style="padding: 0.85rem 2.25rem; font-size: 1.05rem;">
+                            ✓ Aceptar Invitación e Inscribirme
+                        </button>
+                        <button type="submit" name="accion" value="rechazar" class="btn btn-outline-danger btn-lg" style="padding: 0.85rem 2.25rem; font-size: 1.05rem;" onclick="return confirm('¿Seguro que deseas rechazar esta invitación al evento?');">
+                            ✕ Rechazar Invitación
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

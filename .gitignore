@@ -1,0 +1,48 @@
+# Entornos Virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Python / Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3*
+*.sqlite3
+*.sqlite3*
+*.sqlite3-journal
+staticfiles/
+
+# Archivos de medios subidos por usuarios (conservar .gitkeep)
+media/*
+!media/.gitkeep
+
+# Variables de entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Respaldos locales, volcados y temporales
+backups/
+scratch/
+logs/
+estructura.txt
+
+# IDE y Editores
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Sistema Operativo
+Thumbs.db
+Desktop.ini
+.DS_Store

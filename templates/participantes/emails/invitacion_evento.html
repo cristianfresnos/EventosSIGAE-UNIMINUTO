@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Invitación a Evento Institucional - UNIMINUTO</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f1f5f9;
+            margin: 0;
+            padding: 24px;
+            color: #1e293b;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+            border: 1px solid #e2e8f0;
+        }
+        .header {
+            background-color: #002d62;
+            padding: 28px 32px;
+            text-align: center;
+            color: #ffffff;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        .header p {
+            margin: 6px 0 0 0;
+            font-size: 13px;
+            color: #93c5fd;
+        }
+        .content {
+            padding: 32px;
+        }
+        .greeting {
+            font-size: 16px;
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 16px;
+        }
+        .event-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .event-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #002d62;
+            margin: 0 0 10px 0;
+        }
+        .event-detail {
+            margin: 6px 0;
+            font-size: 14px;
+            color: #334155;
+        }
+        .event-detail strong {
+            color: #0f172a;
+        }
+        .cta-container {
+            text-align: center;
+            margin: 28px 0;
+        }
+        .btn-cta {
+            display: inline-block;
+            background-color: #0284c7;
+            color: #ffffff !important;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+        }
+        .notice {
+            background-color: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 12px 16px;
+            font-size: 13px;
+            color: #92400e;
+            border-radius: 0 6px 6px 0;
+            margin: 20px 0;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 20px 32px;
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+            border-top: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SIGAE — UNIMINUTO</h1>
+            <p>Sistema Integrado de Gestión de Asistencia y Eventos</p>
+        </div>
+        <div class="content">
+            <p class="greeting">Estimado(a) {{ invitacion.nombres }} {{ invitacion.apellidos }},</p>
+            <p>
+                <strong>{{ organizador.get_full_name|default:organizador.username }}</strong> le ha invitado formalmente a participar en el siguiente evento institucional organizado por la <strong>Corporación Universitaria Minuto de Dios — UNIMINUTO</strong>:
+            </p>
+
+            <div class="event-box">
+                <h2 class="event-title">{{ evento.nombre }}</h2>
+                <div class="event-detail"><strong>Descripción:</strong> {{ evento.descripcion|truncatewords:40 }}</div>
+                <div class="event-detail"><strong>Fecha:</strong> {{ evento.fecha|date:"l, d \d\e F \d\e Y" }}</div>
+                <div class="event-detail"><strong>Horario:</strong> {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</div>
+                <div class="event-detail"><strong>Modalidad:</strong> {{ evento.get_modalidad_display }}</div>
+                <div class="event-detail"><strong>Lugar:</strong> {{ evento.lugar }}</div>
+            </div>
+
+            <div class="notice">
+                <strong>Fecha límite para responder:</strong> {{ fecha_limite|date:"d/m/Y \a \l\a\s H:i" }}<br>
+                <em>Recuerde que para confirmar su asistencia es indispensable que acepte esta invitación antes de que expire el plazo.</em>
+            </div>
+
+            <div class="cta-container">
+                <a href="{{ enlace_invitacion }}" class="btn-cta" target="_blank" rel="noopener">Consultar y Responder Invitación</a>
+            </div>
+
+            <p style="font-size: 12px; color: #64748b; word-break: break-all;">
+                Si el botón no funciona, copie y pegue el siguiente enlace seguro en su navegador:<br>
+                <a href="{{ enlace_invitacion }}" style="color: #0284c7;">{{ enlace_invitacion }}</a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>Este es un mensaje institucional automatizado emitido por SIGAE UNIMINUTO. Por favor no responda a este correo.</p>
+            <p>&copy; {% now "Y" %} Corporación Universitaria Minuto de Dios - UNIMINUTO. Todos los derechos reservados.</p>
+        </div>
+    </div>
+</body>
+</html>
+

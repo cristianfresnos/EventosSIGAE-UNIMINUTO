@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block title %}Cancelar Evento | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:mis_eventos' %}">Gestión de Eventos</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre|truncatewords:4 }}</a>
+    <span class="sep">/</span>
+    <span class="current">Cancelar Evento</span>
+</div>
+
+<div class="form-page-layout">
+    <div class="form-card" style="border-top: 4px solid #ef4444;">
+        <div class="form-header">
+            <span class="badge badge-danger">Operación Administrativa Crítica</span>
+            <h2>Confirmar Cancelación del Evento</h2>
+            <p class="subtitle">Estás a punto de cancelar formalmente la actividad institucional <strong>{{ evento.nombre }}</strong>.</p>
+        </div>
+
+        <div class="alert alert-warning" style="margin-bottom: 1.5rem;">
+            <span class="alert-icon">⚠️</span>
+            <div class="alert-text">
+                <strong>Consecuencias de esta operación:</strong>
+                <ul style="margin: 0.5rem 0 0 1.2rem; padding: 0; font-size: 0.85rem; line-height: 1.5;">
+                    <li>El evento pasará inmediatamente al estado <strong>CANCELADO</strong>.</li>
+                    <li>Se bloqueará la admisión de nuevas inscripciones y registros de asistencia.</li>
+                    <li>Las <strong>{{ total_inscritos }} inscripciones activas</strong> existentes se conservarán intactas en el historial para fines de trazabilidad institucional.</li>
+                    <li>Esta acción quedará registrada en la bitácora oficial de <strong>Auditoría</strong> del sistema junto con el motivo ingresado.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="event-mini-summary" style="margin-bottom: 1.5rem;">
+            <div class="mini-item">📅 <strong>Fecha:</strong> {{ evento.fecha|date:"d/m/Y" }} | {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</div>
+            <div class="mini-item">📍 <strong>Lugar:</strong> {{ evento.lugar }}</div>
+            <div class="mini-item">👥 <strong>Inscritos Afectados:</strong> {{ total_inscritos }} participantes</div>
+            <div class="mini-item">👤 <strong>Organizador Responsable:</strong> {{ evento.organizador.get_full_name|default:evento.organizador.username }}</div>
+        </div>
+
+        <form method="post" action="{% url 'eventos:cancelar' evento.pk %}" class="custom-form">
+            {% csrf_token %}
+
+            <div class="form-group">
+                <label for="motivo_cancelacion" class="form-label">
+                    <strong>Motivo o Justificación Institucional de la Cancelación</strong> <span style="color: #ef4444;">*</span>
+                </label>
+                <textarea 
+                    name="motivo_cancelacion" 
+                    id="motivo_cancelacion" 
+                    rows="4" 
+                    class="form-control" 
+                    placeholder="Explica detalladamente la razón institucional por la cual se cancela el evento (fuerza mayor, reprogramación académica, requerimiento institucional, etc.)..."
+                    required
+                ></textarea>
+                <small class="form-hint">Este texto se registrará en la bitácora de auditoría y servirá de sustento para los reportes administrativos.</small>
+            </div>
+
+            <div class="form-footer-actions" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem;">
+                <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">
+                    ← Volver sin Cancelar
+                </a>
+                <button type="submit" class="btn btn-danger" style="background: #dc2626; color: #fff; font-weight: 700; border: none; padding: 0.7rem 1.4rem; border-radius: 6px;">
+                    ✕ Confirmar Cancelación Definitiva
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

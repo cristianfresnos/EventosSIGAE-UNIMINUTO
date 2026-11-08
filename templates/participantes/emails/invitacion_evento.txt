@@ -1,0 +1,25 @@
+SIGAE — UNIMINUTO
+Sistema Integrado de Gestión de Asistencia y Eventos
+
+Estimado(a) {{ invitacion.nombres }} {{ invitacion.apellidos }},
+
+{{ organizador.get_full_name|default:organizador.username }} le ha invitado formalmente a participar en el siguiente evento institucional organizado por la Corporación Universitaria Minuto de Dios — UNIMINUTO:
+
+EVENTO: {{ evento.nombre }}
+DESCRIPCIÓN: {{ evento.descripcion }}
+FECHA: {{ evento.fecha|date:"l, d \d\e F \d\e Y" }}
+HORARIO: {{ evento.hora_inicio|time:"H:i" }} a {{ evento.hora_fin|time:"H:i" }}
+MODALIDAD: {{ evento.get_modalidad_display }}
+LUGAR: {{ evento.lugar }}
+
+FECHA LÍMITE PARA RESPONDER: {{ fecha_limite|date:"d/m/Y \a \l\a\s H:i" }}
+
+Para consultar los detalles completos y decidir si acepta o rechaza la invitación, ingrese al siguiente enlace seguro:
+{{ enlace_invitacion }}
+
+Importante: La confirmación de su asistencia requiere su aceptación explícita mediante el enlace antes de la fecha límite.
+
+Atentamente,
+Corporación Universitaria Minuto de Dios — UNIMINUTO
+SIGAE Plataforma de Eventos
+

@@ -1,0 +1,41 @@
+# ==============================================================================
+# UNIDAD DE SERVICIO SYSTEMD PARA SIGAE-UNIMINUTO (PRODUCCIÓN LINUX)
+# Archivo: /etc/systemd/system/sigae.service
+# Permisos recomendados: chmod 644 /etc/systemd/system/sigae.service
+# ==============================================================================
+
+[Unit]
+Description=Gunicorn WSGI Application Server para EventosSIGAE-UNIMINUTO
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+# Tipo simple es el más robusto para Gunicorn sin requerir paquetes C adicionales
+Type=simple
+User=sigae
+Group=www-data
+
+# Directorio en /run gestionado automáticamente por systemd para sockets efímeros
+RuntimeDirectory=gunicorn
+WorkingDirectory=/var/www/sigae-uniminuto
+
+# Inyección segura de variables de entorno desde archivo protegido (chmod 600)
+EnvironmentFile=/var/www/sigae-uniminuto/.env
+
+# Comando de ejecución dentro del entorno virtual Python aislado
+ExecStart=/var/www/sigae-uniminuto/.venv/bin/gunicorn \
+    -c /var/www/sigae-uniminuto/deploy/gunicorn_conf.py \
+    config.wsgi:application
+
+# Política de reinicio ante fallos
+Restart=on-failure
+RestartSec=5s
+
+# Endurecimiento de seguridad en Linux (Sandboxing)
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

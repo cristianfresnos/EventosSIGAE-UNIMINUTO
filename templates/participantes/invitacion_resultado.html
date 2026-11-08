@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block title %}Estado de Invitación | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <span class="current">Invitación Institucional</span>
+</div>
+
+<div class="invitation-layout" style="max-width: 600px; margin: 2rem auto; text-align: center;">
+    <div class="auth-card" style="padding: 2.5rem;">
+        {% if estado == 'CANCELADA' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #dc2626;">🚫</div>
+            <h2 style="color: #002d62; font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">Invitación Cancelada</h2>
+            <p style="color: #475569; line-height: 1.6; margin-bottom: 1.5rem;">
+                Esta invitación al evento <strong>{{ evento.nombre }}</strong> ha sido cancelada por el organizador y ya no se encuentra disponible. Si crees que se trata de un error, comunícate con el responsable del evento.
+            </p>
+
+        {% elif estado == 'EXPIRADA' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #dc2626;">⌛</div>
+            <h2 style="color: #002d62; font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">Invitación Expirada</h2>
+            <p style="color: #475569; line-height: 1.6; margin-bottom: 1.5rem;">
+                El plazo límite para responder a la invitación del evento <strong>{{ evento.nombre }}</strong> ha vencido. Si aún deseas participar, contacta al organizador institucional para que te emita una nueva invitación o consulta si el evento admite inscripción abierta.
+            </p>
+
+        {% elif estado == 'ACEPTADA' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #16a34a;">✓</div>
+            <h2 style="color: #002d62; font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">Invitación Ya Aceptada</h2>
+            <p style="color: #475569; line-height: 1.6; margin-bottom: 1.5rem;">
+                Esta invitación al evento <strong>{{ evento.nombre }}</strong> ya fue aceptada previamente y cuenta con una inscripción activa en el sistema.
+            </p>
+            {% if user.is_authenticated %}
+                <div style="margin-bottom: 1.5rem;">
+                    <a href="{% url 'participantes:mis_inscripciones' %}" class="btn btn-primary">Ver Mis Inscripciones</a>
+                </div>
+            {% endif %}
+
+        {% elif estado == 'RECHAZADA' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #64748b;">✕</div>
+            <h2 style="color: #002d62; font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">Invitación Rechazada</h2>
+            <p style="color: #475569; line-height: 1.6; margin-bottom: 1.5rem;">
+                Has declinado formalmente participar en el evento <strong>{{ evento.nombre }}</strong>. Esta invitación ya no admite respuestas adicionales.
+            </p>
+
+        {% else %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #f59e0b;">⚠</div>
+            <h2 style="color: #002d62; font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">Enlace Inválido o No Encontrado</h2>
+            <p style="color: #475569; line-height: 1.6; margin-bottom: 1.5rem;">
+                El enlace de invitación presentado no corresponde a ningún registro activo o ha sido revocado. Por favor verifique el enlace recibido por correo electrónico.
+            </p>
+        {% endif %}
+
+        <div style="margin-top: 1.5rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem;">
+            <a href="{% url 'eventos:catalogo' %}" class="btn btn-secondary">Explorar Catálogo de Eventos</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

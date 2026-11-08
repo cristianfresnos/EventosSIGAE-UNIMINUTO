@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block title %}Acceso a Inscripción | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <span class="current">Acceso a Inscripción</span>
+</div>
+
+<div class="result-layout" style="max-width: 600px; margin: 2rem auto; text-align: center;">
+    <div class="auth-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 2.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        
+        {% if estado == 'EXPIRADO' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #dc2626;">⌛</div>
+            <h2 style="color: #002d62; font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">
+                Enlace de Acceso Expirado
+            </h2>
+            <p style="color: #475569; line-height: 1.6; margin-bottom: 1.5rem;">
+                El enlace personal para consultar la inscripción ha superado su vigencia de 30 días. Si necesitas acceder nuevamente a tus datos del evento, puedes volver a ingresar tus datos en el formulario público del evento para recibir un nuevo enlace en tu correo.
+            </p>
+
+        {% elif estado == 'REVOCADO' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #dc2626;">🚫</div>
+            <h2 style="color: #002d62; font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">
+                Acceso Revocado
+            </h2>
+            <p style="color: #475569; line-height: 1.6; margin-bottom: 1.5rem;">
+                El acceso a esta inscripción ha sido revocado por razones de seguridad o por solicitud del usuario/administrador. Comunícate con los organizadores del evento si consideras que se trata de un error.
+            </p>
+
+        {% elif estado == 'NO_AUTORIZADO' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #f59e0b;">🔒</div>
+            <h2 style="color: #002d62; font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">
+                Acceso No Autorizado
+            </h2>
+            <p style="color: #475569; line-height: 1.6; margin-bottom: 1.5rem;">
+                Para acceder a tu página individual de participante debes utilizar el enlace seguro y personal que recibiste en tu correo electrónico de confirmación.
+            </p>
+
+        {% else %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #f59e0b;">⚠</div>
+            <h2 style="color: #002d62; font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">
+                Enlace Inválido o Inexistente
+            </h2>
+            <p style="color: #475569; line-height: 1.6; margin-bottom: 1.5rem;">
+                El enlace de acceso que has seguido no corresponde a ningún registro válido o ha sido sustituido por uno más reciente. Por favor verifica el último correo recibido de UNIMINUTO SIGAE.
+            </p>
+        {% endif %}
+
+        <div style="margin-top: 2rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem; display: flex; justify-content: center; gap: 1rem;">
+            {% if evento %}
+                <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">← Ver Evento</a>
+            {% endif %}
+            <a href="{% url 'eventos:catalogo' %}" class="btn btn-primary">Catálogo de Eventos</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

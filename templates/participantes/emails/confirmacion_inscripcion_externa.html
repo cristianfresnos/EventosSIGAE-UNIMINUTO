@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Confirmación de Inscripción - SIGAE UNIMINUTO</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f1f5f9;
+            margin: 0;
+            padding: 24px;
+            color: #1e293b;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+            border: 1px solid #e2e8f0;
+        }
+        .header {
+            background-color: #002d62;
+            padding: 28px 32px;
+            text-align: center;
+            color: #ffffff;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        .header p {
+            margin: 6px 0 0 0;
+            font-size: 13px;
+            color: #93c5fd;
+        }
+        .content {
+            padding: 32px;
+        }
+        .greeting {
+            font-size: 16px;
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 16px;
+        }
+        .intro {
+            font-size: 14px;
+            color: #475569;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .event-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .event-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #002d62;
+            margin: 0 0 10px 0;
+        }
+        .event-detail {
+            margin: 6px 0;
+            font-size: 14px;
+            color: #334155;
+        }
+        .event-detail strong {
+            color: #0f172a;
+        }
+        .cta-container {
+            text-align: center;
+            margin: 28px 0;
+        }
+        .btn-cta {
+            display: inline-block;
+            background-color: #0284c7;
+            color: #ffffff !important;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+            letter-spacing: 0.2px;
+        }
+        .notice {
+            background-color: #f0fdf4;
+            border-left: 4px solid #16a34a;
+            padding: 12px 16px;
+            font-size: 13px;
+            color: #166534;
+            border-radius: 0 6px 6px 0;
+            margin: 20px 0;
+            line-height: 1.5;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 20px 32px;
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+            border-top: 1px solid #e2e8f0;
+        }
+        .url-box {
+            background: #f1f5f9;
+            padding: 10px;
+            border-radius: 6px;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 12px;
+            color: #0284c7;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>UNIMINUTO</h1>
+            <p>SIGAE — Sistema Integral de Gestión de Asistencia a Eventos</p>
+        </div>
+        <div class="content">
+            <div class="greeting">
+                ¡Hola, {{ participante.nombres }} {{ participante.apellidos }}!
+            </div>
+            <div class="intro">
+                Tu inscripción al evento institucional ha sido confirmada satisfactoriamente. A continuación te presentamos el resumen de los detalles de tu registro:
+            </div>
+
+            <div class="event-box">
+                <div class="event-title">{{ evento.nombre }}</div>
+                <div class="event-detail"><strong>📅 Fecha:</strong> {{ evento.fecha|date:"d/m/Y" }}</div>
+                <div class="event-detail"><strong>⏰ Horario:</strong> {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</div>
+                <div class="event-detail"><strong>📍 Lugar:</strong> {{ evento.lugar }}</div>
+                <div class="event-detail"><strong>🌐 Modalidad:</strong> {{ evento.get_modalidad_display }}</div>
+                <div class="event-detail"><strong>🆔 Inscripción:</strong> #{{ inscripcion.pk }}</div>
+                <div class="event-detail"><strong>📄 Documento registrado:</strong> {{ participante.documento }}</div>
+            </div>
+
+            <div class="cta-container">
+                <a href="{{ enlace_acceso }}" class="btn-cta" target="_blank" rel="noopener noreferrer">
+                    Consultar Mi Inscripción y Detalles
+                </a>
+            </div>
+
+            <div class="notice">
+                <strong>📌 Enlace personal seguro:</strong> Este enlace es personal e intransferible. Te permite consultar los detalles de tu inscripción y las instrucciones del evento en cualquier momento (válido hasta el {{ fecha_expiracion|date:"d/m/Y" }}).
+            </div>
+
+            <div style="font-size: 12px; color: #64748b; margin-top: 20px;">
+                Si el botón anterior no funciona en tu cliente de correo, copia y pega la siguiente dirección en tu navegador:
+                <div class="url-box">{{ enlace_acceso }}</div>
+            </div>
+        </div>
+        <div class="footer">
+            <p style="margin: 0 0 6px 0;">Corporación Universitaria Minuto de Dios — UNIMINUTO</p>
+            <p style="margin: 0;">Este es un mensaje institucional automático generado por SIGAE. Por favor no responder a este remitente.</p>
+        </div>
+    </div>
+</body>
+</html>

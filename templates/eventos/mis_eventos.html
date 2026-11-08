@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+
+{% block title %}Gestión de Eventos | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title-group">
+        <span class="badge badge-primary">Panel de Control</span>
+        <h2>Gestión y Administración de Eventos</h2>
+        <p class="subtitle">
+            {% if modo_vista == 'todos' %}
+                Visualizando todos los eventos institucionales del sistema (Modo Administrador).
+            {% else %}
+                Visualizando los eventos bajo tu responsabilidad directa como organizador.
+            {% endif %}
+        </p>
+    </div>
+    <div class="header-action">
+        <a href="{% url 'eventos:crear' %}" class="btn btn-primary">+ Crear Nuevo Evento</a>
+    </div>
+</div>
+
+{% if eventos %}
+<div class="table-responsive">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Evento / Categoría</th>
+                <th>Fecha y Horario</th>
+                <th>Modalidad / Lugar</th>
+                <th>Estado</th>
+                <th>Inscritos</th>
+                <th>Documentos y Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for evento in eventos %}
+            <tr>
+                <td>
+                    <strong><a href="{% url 'eventos:detalle' evento.pk %}" class="table-link">{{ evento.nombre }}</a></strong>
+                    <div class="table-sub">{{ evento.categoria.nombre }}</div>
+                    {% if modo_vista == 'todos' %}
+                        <div class="table-sub organizer-tag">Org: {{ evento.organizador.get_full_name|default:evento.organizador.username }}</div>
+                    {% endif %}
+                </td>
+                <td>
+                    <div>{{ evento.fecha|date:"d/m/Y" }}</div>
+                    <div class="table-sub">{{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</div>
+                </td>
+                <td>
+                    <div>{{ evento.get_modalidad_display }}</div>
+                    <div class="table-sub">{{ evento.lugar|truncatechars:30 }}</div>
+                </td>
+                <td>
+                    <span class="badge {% if evento.estado == 'PUBLICADO' %}badge-success{% elif evento.estado == 'FINALIZADO' or evento.estado == 'CERRADO' %}badge-dark{% else %}badge-warning{% endif %}">
+                        {{ evento.get_estado_display }}
+                    </span>
+                </td>
+                <td>
+                    <strong>{{ evento.total_activos }}</strong>
+                    {% if evento.cupo %}<span class="table-sub">/ {{ evento.cupo }}</span>{% else %}<span class="table-sub">(Ilimitado)</span>{% endif %}
+                </td>
+                <td>
+                    <div class="table-actions">
+                        <a href="{% url 'asistencia:control_asistencia' evento.pk %}" class="btn btn-sm btn-primary" title="Control de Asistencia QR y Manual">📱 Asistencia</a>
+                        <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-sm btn-secondary" title="Ver detalle">Ver</a>
+                        <a href="{% url 'eventos:editar' evento.pk %}" class="btn btn-sm btn-secondary" title="Editar evento">Editar</a>
+                        <a href="{% url 'reportes:planilla_asistencia_pdf' evento.pk %}" class="btn btn-sm btn-secondary btn-icon" title="Descargar Planilla PDF">📄 Planilla</a>
+                        <a href="{% url 'reportes:reporte_consolidado_pdf' evento.pk %}" class="btn btn-sm btn-secondary btn-icon" title="Descargar Reporte PDF">📊 Reporte</a>
+                        {% if evento.estado != 'CANCELADO' and evento.estado != 'FINALIZADO' %}
+                            <a href="{% url 'eventos:cancelar' evento.pk %}" class="btn btn-sm btn-outline-danger" title="Cancelar formalmente el evento" style="color: #dc2626; border-color: #fca5a5;">✕ Cancelar</a>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon">📅</div>
+    <h3>No tienes eventos registrados</h3>
+    <p>Aún no has creado eventos en el sistema. Comienza programando tu primera actividad institucional.</p>
+    <a href="{% url 'eventos:crear' %}" class="btn btn-primary">+ Crear Nuevo Evento</a>
+</div>
+{% endif %}
+{% endblock %}

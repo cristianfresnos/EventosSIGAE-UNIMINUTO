@@ -1,0 +1,303 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:catalogo' %}">Catálogo de Eventos</a>
+    <span class="sep">/</span>
+    <span class="current">{{ evento.nombre|truncatewords:6 }}</span>
+</div>
+
+<div class="event-detail-layout">
+    <!-- Contenido Principal -->
+    <div class="event-detail-main">
+        <div class="detail-header-card">
+            <div class="badges-row">
+                <span class="badge badge-category">{{ evento.categoria.nombre }}</span>
+                <span class="badge {% if evento.modalidad == 'PRESENCIAL' %}badge-presencial{% elif evento.modalidad == 'VIRTUAL' %}badge-virtual{% else %}badge-hibrida{% endif %}">
+                    {{ evento.get_modalidad_display }}
+                </span>
+                <span class="badge {% if evento.estado == 'PUBLICADO' %}badge-success{% elif evento.estado == 'FINALIZADO' or evento.estado == 'CERRADO' %}badge-dark{% else %}badge-warning{% endif %}">
+                    {{ evento.get_estado_display }}
+                </span>
+            </div>
+            <h1 class="detail-title">{{ evento.nombre }}</h1>
+            <p class="organizer-sub">Organizado por <strong>{{ evento.organizador.get_full_name|default:evento.organizador.username }}</strong></p>
+        </div>
+
+        <section class="detail-section">
+            <h3 class="section-title">Descripción del Evento</h3>
+            <div class="description-content">
+                {{ evento.descripcion|linebreaks }}
+            </div>
+        </section>
+
+        <section class="detail-section">
+            <h3 class="section-title">Información y Logística</h3>
+            <div class="info-grid">
+                <div class="info-card">
+                    <div class="info-icon">📅</div>
+                    <div class="info-data">
+                        <span class="info-label">Fecha del Evento</span>
+                        <span class="info-val">{{ evento.fecha|date:"l, d \d\e F \d\e Y" }}</span>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <div class="info-icon">⏰</div>
+                    <div class="info-data">
+                        <span class="info-label">Horario Programado</span>
+                        <span class="info-val">{{ evento.hora_inicio|time:"H:i" }} a {{ evento.hora_fin|time:"H:i" }}</span>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <div class="info-icon">📍</div>
+                    <div class="info-data">
+                        <span class="info-label">Lugar / Sede</span>
+                        <span class="info-val">{{ evento.lugar }}</span>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <div class="info-icon">👥</div>
+                    <div class="info-data">
+                        <span class="info-label">Cupo y Asistencia</span>
+                        {% if evento.cupo %}
+                            <span class="info-val">{{ total_activos }} inscritos de {{ evento.cupo }} cupos</span>
+                        {% else %}
+                            <span class="info-val">{{ total_activos }} inscritos (Cupo ilimitado)</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Barra Lateral de Inscripción y Gestión -->
+    <aside class="event-detail-sidebar">
+        <!-- Tarjeta de Estado de Inscripción -->
+        <div class="action-card">
+            <h3>Inscripción al Evento</h3>
+
+            {% if inscripcion_usuario and inscripcion_usuario.estado == 'ACTIVA' %}
+                <div class="status-banner status-banner-success">
+                    <span class="status-icon">✓</span>
+                    <div>
+                        <strong>¡Ya estás inscrito!</strong>
+                        <p>Tu inscripción se encuentra activa. Te esperamos en la fecha y lugar indicados.</p>
+                    </div>
+                </div>
+
+                <!-- Estado de Asistencia del Usuario (Etapa 7.3) -->
+                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.8rem; margin: 0.8rem 0; font-size: 0.88rem;">
+                    <div style="margin-bottom: 0.4rem;">
+                        <strong>Llegada: </strong>
+                        {% if llegada_registrada %}
+                            <span class="badge badge-success">✓ {{ asistencia_usuario.hora_entrada|time:"H:i" }}</span>
+                        {% else %}
+                            <span class="badge badge-warning" style="background: #eab308; color: #000;">⏳ Pendiente</span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <strong>Salida: </strong>
+                        {% if salida_registrada %}
+                            <span class="badge badge-success">✓ {{ asistencia_usuario.hora_salida|time:"H:i" }} ({{ asistencia_usuario.minutos_permanencia }}m)</span>
+                        {% elif salidas_habilitadas and llegada_registrada %}
+                            <span class="badge badge-info" style="background: #0284c7; color: #fff;">🚪 Salidas Habilitadas</span>
+                        {% else %}
+                            <span class="badge badge-secondary">⏳ Pendiente</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="sidebar-actions" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <a href="{% url 'asistencia:pase_digital' inscripcion_usuario.pk %}" class="btn btn-primary btn-block">🎟️ Ver Mi Pase QR Dinámico</a>
+                    {% if salidas_habilitadas and llegada_registrada and not salida_registrada %}
+                        <a href="{% url 'asistencia:escanear_salida' evento.pk %}" class="btn btn-warning btn-block" style="background: #eab308; color: #000; font-weight: 700; border: none;">
+                            🚪 Escanear QR de Salida
+                        </a>
+                    {% endif %}
+                    <a href="{% url 'participantes:mis_inscripciones' %}" class="btn btn-secondary btn-block">Ver Mis Inscripciones</a>
+                </div>
+
+            {% elif inscripcion_usuario and inscripcion_usuario.estado == 'CANCELADA' %}
+                <div class="status-banner status-banner-warning">
+                    <span class="status-icon">⚠</span>
+                    <div>
+                        <strong>Inscripción Cancelada</strong>
+                        <p>Habías cancelado tu inscripción previa a este evento.</p>
+                    </div>
+                </div>
+                {% if puede_inscribirse %}
+                    <form method="post" action="{% url 'participantes:inscribirse' evento.pk %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-primary btn-block">Reactivar mi Inscripción</button>
+                    </form>
+                {% endif %}
+
+            {% elif esta_lleno %}
+                <div class="status-banner status-banner-danger">
+                    <span class="status-icon">🚫</span>
+                    <div>
+                        <strong>Cupo Completo</strong>
+                        <p>Se ha alcanzado la capacidad máxima de {{ evento.cupo }} participantes para este evento.</p>
+                    </div>
+                </div>
+
+            {% elif evento.estado != 'PUBLICADO' %}
+                <div class="status-banner status-banner-info">
+                    <span class="status-icon">ℹ</span>
+                    <div>
+                        <strong>Inscripciones No Disponibles</strong>
+                        <p>El evento se encuentra en estado <em>{{ evento.get_estado_display }}</em>.</p>
+                    </div>
+                </div>
+
+            {% else %}
+                <!-- Evento disponible para inscribirse o por invitación -->
+                <p class="card-hint">
+                    {% if evento.cupo %}
+                        Quedan <strong>{{ cupos_disponibles }}</strong> cupo{{ cupos_disponibles|pluralize }} disponible{{ cupos_disponibles|pluralize }}.
+                    {% else %}
+                        Evento con cupo ilimitado abierto a la comunidad.
+                    {% endif %}
+                </p>
+
+                {% if evento.modalidad_inscripcion == 'SOLO_INVITACION' %}
+                    <div class="status-banner status-banner-info" style="background: #f8fafc; border-left: 4px solid #0284c7;">
+                        <span class="status-icon">🔒</span>
+                        <div>
+                            <strong>Solo por Invitación</strong>
+                            <p>Este evento requiere una invitación institucional previa emitida por el organizador.</p>
+                        </div>
+                    </div>
+                {% else %}
+                    {% if user.is_authenticated %}
+                        <form method="post" action="{% url 'participantes:inscribirse' evento.pk %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-primary btn-block btn-lg">Inscribirme con mi Cuenta</button>
+                        </form>
+                    {% else %}
+                        <a href="{% url 'participantes:inscripcion_publica' evento.pk %}" class="btn btn-primary btn-block btn-lg">Inscribirme como Externo</a>
+                        <div class="login-divider"><span>o</span></div>
+                        <a href="{% url 'usuarios:login' %}?next={% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary btn-block">Iniciar Sesión Institucional</a>
+                    {% endif %}
+                {% endif %}
+            {% endif %}
+        </div>
+
+        <!-- Tarjeta de Gestión (Solo Organizador y Staff) -->
+        {% if puede_gestionar %}
+        <div class="action-card management-card">
+            <h3>Panel de Organizador</h3>
+            <p class="card-hint">Acciones reservadas para el responsable del evento:</p>
+            <div class="management-buttons">
+                <a href="{% url 'participantes:gestionar_invitaciones' evento.pk %}" class="btn btn-primary btn-block">✉️ Gestionar Invitaciones</a>
+                <a href="{% url 'asistencia:control_asistencia' evento.pk %}" class="btn btn-secondary btn-block">📱 Control de Asistencia (QR)</a>
+                <a href="{% url 'eventos:editar' evento.pk %}" class="btn btn-secondary btn-block">✏️ Editar Evento</a>
+                <a href="{% url 'reportes:planilla_asistencia_pdf' evento.pk %}" class="btn btn-secondary btn-block">📄 Descargar Planilla PDF</a>
+                <a href="{% url 'reportes:reporte_consolidado_pdf' evento.pk %}" class="btn btn-secondary btn-block">📊 Descargar Reporte PDF</a>
+                {% if evento.estado != 'CANCELADO' and evento.estado != 'FINALIZADO' %}
+                    <a href="{% url 'eventos:cancelar' evento.pk %}" class="btn btn-outline-danger btn-block" style="margin-top: 0.5rem; color: #dc2626; border-color: #fca5a5;">✕ Cancelar Evento</a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Tarjeta de Salida Colectiva (Etapa 7.3) -->
+        <div class="action-card" style="margin-top: 1.5rem; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
+                <h3 style="color: #002d62; font-size: 1.15rem; font-weight: 700; margin: 0;">
+                    🚪 Salida Colectiva (QR)
+                </h3>
+                {% if salidas_habilitadas %}
+                    <span class="badge" style="background: #16a34a; color: #fff;">Sesión Activa</span>
+                {% else %}
+                    <span class="badge" style="background: #64748b; color: #fff;">Inactiva</span>
+                {% endif %}
+            </div>
+
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.8rem; margin-bottom: 1rem; display: flex; justify-content: space-around; text-align: center;">
+                <div>
+                    <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Llegadas</span>
+                    <strong style="color: #16a34a; font-size: 1.1rem;">{{ total_llegadas }}</strong>
+                </div>
+                <div style="border-left: 1px solid #cbd5e1;"></div>
+                <div>
+                    <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Salidas</span>
+                    <strong style="color: #0284c7; font-size: 1.1rem;">{{ total_salidas }}</strong>
+                </div>
+            </div>
+
+            {% if salidas_habilitadas %}
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <a href="{% url 'asistencia:proyector_salida' evento.pk %}" target="_blank" class="btn btn-primary btn-block" style="background: #0f2b46; color: #fff; text-align: center;">
+                        🖥️ Proyector QR de Salida
+                    </a>
+                    <form method="post" action="{% url 'asistencia:cerrar_sesion_salida' evento.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'eventos:detalle' evento.pk %}">
+                        <button type="submit" class="btn btn-outline-danger btn-block" style="width: 100%; color: #dc2626; border-color: #fca5a5;">
+                            🛑 Cerrar Sesión de Salida
+                        </button>
+                    </form>
+                </div>
+            {% else %}
+                <form method="post" action="{% url 'asistencia:iniciar_sesion_salida' evento.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{% url 'eventos:detalle' evento.pk %}">
+                    <button type="submit" class="btn btn-success btn-block" style="width: 100%; background: #16a34a; color: #fff; font-weight: 600;">
+                        🚀 Iniciar Sesión de Salida
+                    </button>
+                </form>
+            {% endif %}
+        </div>
+
+        <!-- Tarjeta de Inscripción Pública y QR (Solo Organizador y Staff cuando es ABIERTA o MIXTA) -->
+        {% if evento.modalidad_inscripcion != 'SOLO_INVITACION' %}
+        <div class="action-card qr-public-card" style="margin-top: 1.5rem; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.5rem;">
+            <h3 style="color: #002d62; font-size: 1.15rem; font-weight: 700; margin-top: 0; margin-bottom: 0.5rem;">
+                🔗 Inscripción Pública y Código QR
+            </h3>
+            <p class="card-hint" style="color: #64748b; font-size: 0.85rem; margin-bottom: 1rem;">
+                Difunde este código QR para que los participantes externos se registren de forma autónoma:
+            </p>
+
+            <div style="margin-bottom: 1rem;">
+                {% if evento.estado != 'PUBLICADO' %}
+                    <span class="badge" style="background: #ef4444; color: #fff; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem;">
+                        Inscripciones Cerradas ({{ evento.get_estado_display }})
+                    </span>
+                {% elif esta_lleno %}
+                    <span class="badge" style="background: #ef4444; color: #fff; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem;">
+                        Cupo Agotado
+                    </span>
+                {% else %}
+                    <span class="badge" style="background: #16a34a; color: #fff; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem;">
+                        Inscripciones Abiertas ({% if evento.cupo %}{{ cupos_disponibles }} cupos disponibles{% else %}Cupo ilimitado{% endif %})
+                    </span>
+                {% endif %}
+            </div>
+
+            <div style="text-align: center; margin-bottom: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
+                <img src="{% url 'participantes:qr_inscripcion_publica' evento.pk %}" alt="Código QR de Inscripción Pública" style="width: 160px; height: 160px; display: block; margin: 0 auto; border-radius: 6px;" />
+                <span style="display: block; font-size: 0.78rem; color: #64748b; margin-top: 0.5rem;">QR público de inscripción</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <a href="{% url 'participantes:qr_inscripcion_publica' evento.pk %}?descargar=1" class="btn btn-secondary btn-block" style="text-align: center; font-size: 0.85rem;">
+                    ⬇ Descargar QR (PNG)
+                </a>
+                <a href="{% url 'participantes:inscripcion_publica' evento.pk %}" target="_blank" class="btn btn-outline-primary btn-block" style="text-align: center; font-size: 0.85rem;">
+                    ↗ Ver Formulario Público
+                </a>
+            </div>
+        </div>
+        {% endif %}
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}

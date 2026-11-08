@@ -1,0 +1,10 @@
+# Dependencias de producción para servidor Linux (Ubuntu/Debian)
+# Proyecto EventosSIGAE-UNIMINUTO (Django 6.1.1, Python 3.13)
+
+-r requirements.txt
+
+# Servidor de aplicaciones WSGI para Linux
+gunicorn==23.0.0
+
+# Despacho eficiente de archivos estáticos en plataformas PaaS (Render)
+whitenoise==6.8.2

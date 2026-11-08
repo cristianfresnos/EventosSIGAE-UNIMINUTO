@@ -1,0 +1,1028 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard Analítico e Indicadores | SIGAE - UNIMINUTO{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ==========================================================================
+   ESTILOS INSTITUCIONALES DEL DASHBOARD ANALÍTICO (SIGAE - UNIMINUTO)
+   ========================================================================== */
+.analytics-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-bottom: 2.5rem;
+}
+
+/* Cabecera del Dashboard */
+.analytics-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+    background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+    padding: 1.5rem 2rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+}
+
+.analytics-title-group h2 {
+    font-size: 1.75rem;
+    color: var(--primary);
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.analytics-title-group p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+.scope-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.65rem;
+    border-radius: 9999px;
+    letter-spacing: 0.03em;
+}
+
+.scope-badge-global {
+    background-color: #eff8ff;
+    color: #175cd3;
+    border: 1px solid #b2ddff;
+}
+
+.scope-badge-restricted {
+    background-color: #fef6ee;
+    color: #b54708;
+    border: 1px solid #f9dbaf;
+}
+
+.header-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+/* Tarjeta de Filtros */
+.filter-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.75rem;
+}
+
+.filter-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    align-items: flex-end;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 0.5rem;
+    grid-column: span 1;
+}
+
+/* Rejilla de Métricas (KPI Cards) */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 2.25rem;
+}
+
+.kpi-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    padding: 1.25rem;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    border-top: 4px solid var(--primary);
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.kpi-card-gold { border-top-color: var(--secondary); }
+.kpi-card-success { border-top-color: #027a48; }
+.kpi-card-info { border-top-color: #06aed4; }
+.kpi-card-purple { border-top-color: #7a5af8; }
+.kpi-card-warning { border-top-color: #f79009; }
+
+.kpi-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+}
+
+.kpi-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+}
+
+.kpi-icon {
+    font-size: 1.35rem;
+    background: #f8fafc;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+}
+
+.kpi-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1.1;
+    margin-bottom: 0.4rem;
+}
+
+.kpi-subtext {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.kpi-progress {
+    height: 6px;
+    background-color: #eaecf0;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 0.4rem;
+}
+
+.kpi-progress-bar {
+    height: 100%;
+    background-color: #027a48;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+}
+
+/* Contenedores de Gráficas */
+.charts-grid-top {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.75rem;
+}
+
+.charts-grid-mid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.75rem;
+}
+
+.charts-grid-bottom {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 2.25rem;
+}
+
+@media (max-width: 992px) {
+    .charts-grid-top,
+    .charts-grid-mid,
+    .charts-grid-bottom {
+        grid-template-columns: 1fr;
+    }
+}
+
+.chart-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.chart-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.6rem;
+}
+
+.chart-card-header h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.chart-card-header .chart-badge {
+    font-size: 0.72rem;
+    background: #f1f5f9;
+    color: var(--text-muted);
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+}
+
+.chart-wrapper {
+    position: relative;
+    height: 260px;
+    width: 100%;
+}
+
+.empty-chart-state {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    padding: 2rem;
+    background-color: #f8fafc;
+    border-radius: var(--radius-md);
+    border: 1px dashed var(--border-color);
+}
+
+.empty-chart-state span {
+    font-size: 1.8rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.7;
+}
+
+/* Tabla de Resumen por Evento */
+.table-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    padding: 1.5rem;
+}
+
+.table-responsive {
+    overflow-x: auto;
+    margin-top: 1rem;
+}
+
+.table-custom {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+.table-custom th {
+    background-color: #f8fafc;
+    color: var(--primary);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 2px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.table-custom td {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+}
+
+.table-custom tr:hover {
+    background-color: #f8fafc;
+}
+
+.badge-status {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-sm);
+}
+
+.badge-publicado { background-color: #ecfdf3; color: #027a48; }
+.badge-finalizado { background-color: #eff8ff; color: #175cd3; }
+.badge-borrador { background-color: #f8fafc; color: #475467; border: 1px solid #d0d5dd; }
+.badge-cancelado { background-color: #fef3f2; color: #b42318; }
+.badge-cerrado { background-color: #fffaeb; color: #b54708; }
+
+.mini-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.mini-progress-bar {
+    flex-grow: 1;
+    height: 6px;
+    background-color: #eaecf0;
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 60px;
+}
+
+.mini-progress-fill {
+    height: 100%;
+    background-color: #027a48;
+    border-radius: 3px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-container">
+
+    <!-- CABECERA PRINCIPAL -->
+    <div class="analytics-header">
+        <div class="analytics-title-group">
+            <h2>
+                <span>📊</span> Dashboard Analítico Institucional
+            </h2>
+            <p>Monitoreo en tiempo real de asistencia, alcance, modalidades y tendencias de eventos UNIMINUTO.</p>
+            <div style="margin-top: 0.5rem;">
+                {% if tiene_alcance_global %}
+                    <span class="scope-badge scope-badge-global">🏛️ Alcance Institucional Global ({{ total_eventos_permitidos }} eventos totales)</span>
+                {% else %}
+                    <span class="scope-badge scope-badge-restricted">👤 Alcance de Organizador (Tus eventos asignados: {{ total_eventos_permitidos }})</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="header-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="{% url 'analitica:exportar_excel' %}{% if querystring %}?{{ querystring }}{% endif %}" class="btn btn-secondary" style="background: #15803d; color: #ffffff; border-color: #166534; font-weight: 600;" title="Exportar reporte institucional en formato nativo Excel (.xlsx)">
+                <span>📗</span> Exportar Excel (.xlsx)
+            </a>
+            <a href="{% url 'analitica:exportar_csv' %}{% if querystring %}?{{ querystring }}{% endif %}" class="btn btn-secondary" title="Exportar conjunto filtrado a CSV">
+                <span>📥</span> Exportar CSV
+            </a>
+            <a href="{% url 'eventos:mis_eventos' %}" class="btn btn-primary">
+                <span>📅</span> Gestión de Eventos
+            </a>
+        </div>
+    </div>
+
+    <!-- TARJETA DE FILTROS -->
+    <div class="filter-card">
+        <div class="filter-header">
+            <h3><span>🔍</span> Filtros de Análisis</h3>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">
+                Eventos analizados: <strong>{{ metricas.total_eventos }}</strong>
+            </span>
+        </div>
+        <form method="get" action="{% url 'analitica:dashboard' %}">
+            <div class="filter-grid">
+                <div>
+                    <label class="form-label" for="{{ form.fecha_desde.id_for_label }}">Fecha desde</label>
+                    {{ form.fecha_desde }}
+                </div>
+                <div>
+                    <label class="form-label" for="{{ form.fecha_hasta.id_for_label }}">Fecha hasta</label>
+                    {{ form.fecha_hasta }}
+                </div>
+                <div>
+                    <label class="form-label" for="{{ form.evento.id_for_label }}">Evento</label>
+                    {{ form.evento }}
+                </div>
+                <div>
+                    <label class="form-label" for="{{ form.categoria.id_for_label }}">Categoría</label>
+                    {{ form.categoria }}
+                </div>
+                <div>
+                    <label class="form-label" for="{{ form.modalidad.id_for_label }}">Modalidad</label>
+                    {{ form.modalidad }}
+                </div>
+                <div>
+                    <label class="form-label" for="{{ form.estado.id_for_label }}">Estado</label>
+                    {{ form.estado }}
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">
+                        Filtrar
+                    </button>
+                    <a href="{% url 'analitica:dashboard' %}" class="btn btn-secondary" title="Restablecer filtros">
+                        Limpiar
+                    </a>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- REJILLA DE TARJETAS DE INDICADORES (KPIS) -->
+    <div class="kpi-grid">
+        <!-- 1. Total Eventos -->
+        <div class="kpi-card">
+            <div class="kpi-top">
+                <span class="kpi-title">Total Eventos</span>
+                <span class="kpi-icon">📅</span>
+            </div>
+            <div class="kpi-value">{{ metricas.total_eventos }}</div>
+            <div class="kpi-subtext">
+                En el rango filtrado
+            </div>
+        </div>
+
+        <!-- 2. Eventos Próximos y Finalizados -->
+        <div class="kpi-card kpi-card-gold">
+            <div class="kpi-top">
+                <span class="kpi-title">Próximos / Finalizados</span>
+                <span class="kpi-icon">⏳</span>
+            </div>
+            <div class="kpi-value">
+                {{ metricas.eventos_proximos }} <span style="font-size: 1.1rem; color: var(--text-muted); font-weight: 400;">/ {{ metricas.eventos_finalizados }}</span>
+            </div>
+            <div class="kpi-subtext">
+                Programados vs. Concluidos
+            </div>
+        </div>
+
+        <!-- 3. Total Inscripciones Activas -->
+        <div class="kpi-card kpi-card-info">
+            <div class="kpi-top">
+                <span class="kpi-title">Inscripciones Activas</span>
+                <span class="kpi-icon">📝</span>
+            </div>
+            <div class="kpi-value">{{ metricas.total_inscripciones_activas }}</div>
+            <div class="kpi-subtext">
+                Excluye canceladas
+            </div>
+        </div>
+
+        <!-- 4. Participantes Únicos -->
+        <div class="kpi-card kpi-card-purple">
+            <div class="kpi-top">
+                <span class="kpi-title">Participantes Únicos</span>
+                <span class="kpi-icon">👥</span>
+            </div>
+            <div class="kpi-value">{{ metricas.total_participantes_unicos }}</div>
+            <div class="kpi-subtext">
+                Sin doble conteo
+            </div>
+        </div>
+
+        <!-- 5. Asistencias Efectivas -->
+        <div class="kpi-card kpi-card-success">
+            <div class="kpi-top">
+                <span class="kpi-title">Asistencias Efectivas</span>
+                <span class="kpi-icon">✅</span>
+            </div>
+            <div class="kpi-value">{{ metricas.total_asistencias_efectivas }}</div>
+            <div class="kpi-subtext">
+                {% if metricas.total_asistencias_anuladas > 0 %}
+                    <span style="color: #b42318;">({{ metricas.total_asistencias_anuladas }} anuladas excluidas)</span>
+                {% else %}
+                    Registradas formalmente
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 6. Porcentaje Asistencia Efectiva -->
+        <div class="kpi-card kpi-card-warning">
+            <div class="kpi-top">
+                <span class="kpi-title">% Cumplimiento</span>
+                <span class="kpi-icon">📈</span>
+            </div>
+            <div class="kpi-value">{{ metricas.porcentaje_asistencia_efectiva }}%</div>
+            <div class="kpi-progress">
+                <div class="kpi-progress-bar" style="width: {{ metricas.porcentaje_asistencia_efectiva }}%;"></div>
+            </div>
+            <div class="kpi-subtext" style="margin-top: 0.35rem;">
+                Sobre inscripciones elegibles
+            </div>
+        </div>
+    </div>
+
+    <!-- SECCIÓN DE GRÁFICAS (FILA 1: TENDENCIA MENSUAL Y MÉTODOS) -->
+    <div class="charts-grid-top">
+        <!-- Gráfica 1: Eventos e Inscripciones por Mes -->
+        <div class="chart-card">
+            <div class="chart-card-header">
+                <h4><span>📅</span> Eventos e Inscripciones por Mes</h4>
+                <span class="chart-badge">Tendencia Temporal</span>
+            </div>
+            <div class="chart-wrapper">
+                {% if metricas.grafica_meses.tiene_datos %}
+                    <canvas id="chartMeses"></canvas>
+                {% else %}
+                    <div class="empty-chart-state">
+                        <span>🗓️</span>
+                        <p>No se registran eventos ni inscripciones en los meses seleccionados.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Gráfica 6: Comparación de Métodos de Registro (QR vs Manual) -->
+        <div class="chart-card">
+            <div class="chart-card-header">
+                <h4><span>📲</span> Método de Asistencia</h4>
+                <span class="chart-badge">Canal de Validación</span>
+            </div>
+            <div class="chart-wrapper">
+                {% if metricas.grafica_metodos.tiene_datos %}
+                    <canvas id="chartMetodos"></canvas>
+                {% else %}
+                    <div class="empty-chart-state">
+                        <span>📱</span>
+                        <p>Sin asistencias efectivas registradas para comparar métodos.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- SECCIÓN DE GRÁFICAS (FILA 2: ASISTENCIA Y PORCENTAJE POR EVENTO) -->
+    <div class="charts-grid-mid">
+        <!-- Gráfica 2: Asistencia Efectiva por Evento -->
+        <div class="chart-card">
+            <div class="chart-card-header">
+                <h4><span>👥</span> Asistencia Efectiva por Evento</h4>
+                <span class="chart-badge">Personas Acreditadas</span>
+            </div>
+            <div class="chart-wrapper">
+                {% if metricas.grafica_eventos.tiene_datos %}
+                    <canvas id="chartEventosAsistencia"></canvas>
+                {% else %}
+                    <div class="empty-chart-state">
+                        <span>📊</span>
+                        <p>No hay eventos disponibles para graficar asistencia.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Gráfica 3: Porcentaje de Asistencia por Evento -->
+        <div class="chart-card">
+            <div class="chart-card-header">
+                <h4><span>📈</span> Tasa de Asistencia (%) por Evento</h4>
+                <span class="chart-badge">Efectividad de Asistencia</span>
+            </div>
+            <div class="chart-wrapper">
+                {% if metricas.grafica_eventos.tiene_datos %}
+                    <canvas id="chartEventosPorcentaje"></canvas>
+                {% else %}
+                    <div class="empty-chart-state">
+                        <span>📉</span>
+                        <p>No hay eventos disponibles para calcular porcentajes.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- SECCIÓN DE GRÁFICAS (FILA 3: CATEGORÍA, MODALIDAD Y FRANJAS HORARIAS) -->
+    <div class="charts-grid-bottom">
+        <!-- Gráfica 4: Distribución por Categoría -->
+        <div class="chart-card">
+            <div class="chart-card-header">
+                <h4><span>🏷️</span> Eventos por Categoría</h4>
+                <span class="chart-badge">Tipología</span>
+            </div>
+            <div class="chart-wrapper">
+                {% if metricas.grafica_categoria.tiene_datos %}
+                    <canvas id="chartCategoria"></canvas>
+                {% else %}
+                    <div class="empty-chart-state">
+                        <span>🏷️</span>
+                        <p>Sin eventos asociados a categorías.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Gráfica 5: Distribución por Modalidad -->
+        <div class="chart-card">
+            <div class="chart-card-header">
+                <h4><span>🌐</span> Eventos por Modalidad</h4>
+                <span class="chart-badge">Formato</span>
+            </div>
+            <div class="chart-wrapper">
+                {% if metricas.grafica_modalidad.tiene_datos %}
+                    <canvas id="chartModalidad"></canvas>
+                {% else %}
+                    <div class="empty-chart-state">
+                        <span>🌐</span>
+                        <p>Sin eventos asociados a modalidades.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Gráfica 5: Llegadas por Franja Horaria -->
+        <div class="chart-card">
+            <div class="chart-card-header">
+                <h4><span>⏰</span> Llegadas por Franja Horaria</h4>
+                <span class="chart-badge">Hora de Entrada</span>
+            </div>
+            <div class="chart-wrapper">
+                {% if metricas.grafica_franjas.tiene_datos %}
+                    <canvas id="chartFranjas"></canvas>
+                {% else %}
+                    <div class="empty-chart-state">
+                        <span>🕒</span>
+                        <p>No existen registros con hora de entrada suficiente para generar la curva de llegadas.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLA DE RESUMEN POR EVENTO -->
+    <div class="table-card">
+        <div class="chart-card-header" style="border: none; padding-bottom: 0;">
+            <h4><span>📋</span> Detalle Consolidado de Eventos Filtrados</h4>
+            <span class="chart-badge">{{ metricas.tabla_eventos|length }} Eventos Listados</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table-custom">
+                <thead>
+                    <tr>
+                        <th>Evento</th>
+                        <th>Categoría</th>
+                        <th>Modalidad</th>
+                        <th>Fecha</th>
+                        <th>Estado</th>
+                        <th style="text-align: center;">Inscritos Activos</th>
+                        <th style="text-align: center;">Asistencias Válidas</th>
+                        <th>% Asistencia</th>
+                        <th style="text-align: right;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in metricas.tabla_eventos %}
+                    <tr>
+                        <td>
+                            <strong>{{ item.evento.nombre }}</strong>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">
+                                Org: {{ item.evento.organizador.get_full_name|default:item.evento.organizador.username }}
+                            </div>
+                        </td>
+                        <td>{{ item.evento.categoria.nombre|default:"-" }}</td>
+                        <td>{{ item.evento.get_modalidad_display }}</td>
+                        <td>{{ item.evento.fecha|date:"d/m/Y" }}</td>
+                        <td>
+                            <span class="badge-status badge-{{ item.evento.estado|lower }}">
+                                {{ item.evento.get_estado_display }}
+                            </span>
+                        </td>
+                        <td style="text-align: center; font-weight: 600;">
+                            {{ item.inscritos_activos }}
+                        </td>
+                        <td style="text-align: center; font-weight: 600; color: #027a48;">
+                            {{ item.asistencias_validas }}
+                        </td>
+                        <td>
+                            <div class="mini-progress">
+                                <span style="font-weight: 600; font-size: 0.82rem; min-width: 40px;">{{ item.porcentaje }}%</span>
+                                <div class="mini-progress-bar">
+                                    <div class="mini-progress-fill" style="width: {{ item.porcentaje }}%;"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            <a href="{% url 'asistencia:control_asistencia' item.evento.pk %}" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" title="Control de Asistencia">
+                                📱 Asistencia
+                            </a>
+                            <a href="{% url 'reportes:reporte_consolidado_pdf' item.evento.pk %}" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" title="Reporte PDF">
+                                📄 Reporte
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                            No se encontraron eventos que coincidan con los criterios de búsqueda.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<!-- JSON seguro para las gráficas -->
+{{ graficas_json|json_script:"graficas-data" }}
+
+{% endblock %}
+
+{% block extra_js %}
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Si Chart.js no se cargó (ej. modo offline estricto), evitar errores
+    if (typeof Chart === 'undefined') {
+        console.warn('Chart.js no está disponible. Las gráficas no se pudieron inicializar en cliente.');
+        return;
+    }
+
+    const dataEl = document.getElementById('graficas-data');
+    if (!dataEl) return;
+    
+    let gData = {};
+    try {
+        gData = JSON.parse(dataEl.textContent);
+    } catch(e) {
+        console.error('Error al decodificar datos de gráficas:', e);
+        return;
+    }
+
+    // Configuración de fuentes y colores globales de Chart.js
+    Chart.defaults.font.family = "'Outfit', -apple-system, BlinkMacSystemFont, sans-serif";
+    Chart.defaults.color = '#64748b';
+
+    const COLOR_PRIMARY = '#002d62';
+    const COLOR_GOLD = '#eaaa00';
+    const COLOR_SUCCESS = '#027a48';
+    const COLOR_CYAN = '#06aed4';
+    const COLOR_PURPLE = '#7a5af8';
+    const COLOR_ORANGE = '#f79009';
+
+    // 1. Gráfica de Eventos e Inscripciones por Mes
+    const ctxMeses = document.getElementById('chartMeses');
+    if (ctxMeses && gData.meses && gData.meses.tiene_datos) {
+        new Chart(ctxMeses, {
+            type: 'bar',
+            data: {
+                labels: gData.meses.labels,
+                datasets: [
+                    {
+                        label: 'Inscripciones Registradas',
+                        data: gData.meses.inscripciones,
+                        backgroundColor: 'rgba(234, 170, 0, 0.85)',
+                        borderColor: COLOR_GOLD,
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Eventos Programados',
+                        data: gData.meses.eventos,
+                        type: 'line',
+                        borderColor: COLOR_PRIMARY,
+                        backgroundColor: 'rgba(0, 45, 98, 0.1)',
+                        borderWidth: 2.5,
+                        fill: true,
+                        tension: 0.3,
+                        pointBackgroundColor: COLOR_PRIMARY,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 12 } }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        position: 'left',
+                        title: { display: true, text: 'Inscripciones' },
+                        grid: { color: '#f1f5f9' },
+                        ticks: { precision: 0 }
+                    },
+                    y1: {
+                        beginAtZero: true,
+                        position: 'right',
+                        title: { display: true, text: 'Eventos' },
+                        grid: { drawOnChartArea: false },
+                        ticks: { precision: 0 }
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. Gráfica de Asistencia por Evento
+    const ctxEventosAsist = document.getElementById('chartEventosAsistencia');
+    if (ctxEventosAsist && gData.eventos && gData.eventos.tiene_datos) {
+        new Chart(ctxEventosAsist, {
+            type: 'bar',
+            data: {
+                labels: gData.eventos.labels,
+                datasets: [{
+                    label: 'Asistencias Efectivas',
+                    data: gData.eventos.asistencia,
+                    backgroundColor: 'rgba(2, 122, 72, 0.85)',
+                    borderColor: COLOR_SUCCESS,
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        grid: { color: '#f1f5f9' },
+                        ticks: { precision: 0 }
+                    }
+                }
+            }
+        });
+    }
+
+    // 3. Gráfica de Porcentaje por Evento
+    const ctxEventosPct = document.getElementById('chartEventosPorcentaje');
+    if (ctxEventosPct && gData.eventos && gData.eventos.tiene_datos) {
+        new Chart(ctxEventosPct, {
+            type: 'bar',
+            data: {
+                labels: gData.eventos.labels,
+                datasets: [{
+                    label: '% Asistencia',
+                    data: gData.eventos.porcentaje,
+                    backgroundColor: 'rgba(0, 45, 98, 0.85)',
+                    borderColor: COLOR_PRIMARY,
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.raw + '%';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        grid: { color: '#f1f5f9' },
+                        ticks: {
+                            callback: function(val) { return val + '%'; }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 4. Gráfica de Categoría
+    const ctxCat = document.getElementById('chartCategoria');
+    if (ctxCat && gData.categoria && gData.categoria.tiene_datos) {
+        new Chart(ctxCat, {
+            type: 'doughnut',
+            data: {
+                labels: gData.categoria.labels,
+                datasets: [{
+                    data: gData.categoria.data,
+                    backgroundColor: [
+                        '#002d62', '#eaaa00', '#027a48', '#06aed4', '#7a5af8', '#f79009'
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { boxWidth: 10 } }
+                },
+                cutout: '65%'
+            }
+        });
+    }
+
+    // 5. Gráfica de Modalidad
+    const ctxMod = document.getElementById('chartModalidad');
+    if (ctxMod && gData.modalidad && gData.modalidad.tiene_datos) {
+        new Chart(ctxMod, {
+            type: 'doughnut',
+            data: {
+                labels: gData.modalidad.labels,
+                datasets: [{
+                    data: gData.modalidad.data,
+                    backgroundColor: ['#002d62', '#eaaa00', '#06aed4'],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { boxWidth: 10 } }
+                },
+                cutout: '65%'
+            }
+        });
+    }
+
+    // 6. Gráfica de Franjas Horarias
+    const ctxFranjas = document.getElementById('chartFranjas');
+    if (ctxFranjas && gData.franjas && gData.franjas.tiene_datos) {
+        new Chart(ctxFranjas, {
+            type: 'bar',
+            data: {
+                labels: gData.franjas.labels,
+                datasets: [{
+                    label: 'Llegadas registradas',
+                    data: gData.franjas.data,
+                    backgroundColor: 'rgba(122, 90, 248, 0.85)',
+                    borderColor: COLOR_PURPLE,
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f1f5f9' },
+                        ticks: { precision: 0 }
+                    }
+                }
+            }
+        });
+    }
+
+    // 7. Gráfica de Métodos de Registro
+    const ctxMetodos = document.getElementById('chartMetodos');
+    if (ctxMetodos && gData.metodos && gData.metodos.tiene_datos) {
+        new Chart(ctxMetodos, {
+            type: 'doughnut',
+            data: {
+                labels: gData.metodos.labels,
+                datasets: [{
+                    data: gData.metodos.data,
+                    backgroundColor: ['#027a48', '#002d62', '#eaaa00', '#64748b'],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { boxWidth: 10 } }
+                },
+                cutout: '65%'
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

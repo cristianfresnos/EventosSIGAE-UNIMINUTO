@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+
+{% block title %}Mis Inscripciones | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title-group">
+        <span class="badge badge-primary">Panel de Participante</span>
+        <h2>Mis Inscripciones a Eventos</h2>
+        <p class="subtitle">Consulta los eventos en los que estás registrado(a) y gestiona tu participación.</p>
+    </div>
+    <div class="header-action">
+        <a href="{% url 'eventos:catalogo' %}" class="btn btn-primary">Explorar Más Eventos</a>
+    </div>
+</div>
+
+{% if inscripciones %}
+<div class="inscriptions-grid">
+    {% for insc in inscripciones %}
+    <div class="inscription-card {% if insc.estado == 'CANCELADA' %}card-cancelled{% endif %}">
+        <div class="inscription-header">
+            <span class="badge badge-category">{{ insc.evento.categoria.nombre }}</span>
+            <div class="status-tags">
+                {% if insc.evento.estado == 'CANCELADO' %}
+                    <span class="badge badge-danger">Evento Cancelado</span>
+                {% else %}
+                    <span class="badge {% if insc.estado == 'ACTIVA' %}badge-success{% else %}badge-danger{% endif %}">
+                        Inscripción {{ insc.get_estado_display }}
+                    </span>
+                    {% if insc.asistencia %}
+                        {% if insc.asistencia.es_valida %}
+                            <span class="badge badge-success">✓ Asistencia Registrada</span>
+                        {% else %}
+                            <span class="badge badge-warning">⚠ Asistencia Anulada</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge badge-info">Pendiente de Asistencia</span>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="inscription-body">
+            <h3 class="event-title">
+                <a href="{% url 'eventos:detalle' insc.evento.pk %}">{{ insc.evento.nombre }}</a>
+            </h3>
+
+            {% if insc.evento.estado == 'CANCELADO' %}
+                <div class="alert alert-warning" style="margin-bottom: 0.8rem; padding: 0.4rem 0.8rem; font-size: 0.82rem;">
+                    ⚠️ Esta actividad institucional fue cancelada formalmente por los organizadores.
+                </div>
+            {% endif %}
+
+            <div class="meta-list">
+                <div class="meta-item">
+                    <span class="icon">📅</span>
+                    <span>{{ insc.evento.fecha|date:"l, d \d\e F \d\e Y" }}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="icon">⏰</span>
+                    <span>{{ insc.evento.hora_inicio|time:"H:i" }} - {{ insc.evento.hora_fin|time:"H:i" }}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="icon">📍</span>
+                    <span>{{ insc.evento.lugar }} ({{ insc.evento.get_modalidad_display }})</span>
+                </div>
+                <div class="meta-item">
+                    <span class="icon">📝</span>
+                    <span>Inscrito el {{ insc.fecha_inscripcion|date:"d/m/Y H:i" }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="inscription-footer">
+            <a href="{% url 'eventos:detalle' insc.evento.pk %}" class="btn btn-secondary btn-sm">Ver Evento</a>
+            {% if insc.evento.estado != 'CANCELADO' %}
+                {% if insc.estado == 'ACTIVA' %}
+                    <a href="{% url 'asistencia:pase_digital' insc.pk %}" class="btn btn-primary btn-sm">🎟️ Ver Pase / QR</a>
+                {% endif %}
+
+                {% if insc.estado == 'ACTIVA' and not insc.asistio and insc.evento.estado != 'FINALIZADO' and insc.evento.estado != 'CERRADO' %}
+                    <form method="post" action="{% url 'participantes:cancelar_inscripcion' insc.pk %}" class="cancel-form" onsubmit="return confirm('¿Estás seguro(a) de que deseas cancelar tu inscripción a este evento?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-danger btn-sm">Cancelar Inscripción</button>
+                    </form>
+                {% elif insc.estado == 'CANCELADA' and insc.evento.estado == 'PUBLICADO' %}
+                    <form method="post" action="{% url 'participantes:inscribirse' insc.evento.pk %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-primary btn-sm">Reactivar Inscripción</button>
+                    </form>
+                {% endif %}
+            {% else %}
+                <span class="text-muted" style="font-size: 0.8rem;">Historial Preservado</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon">🎟️</div>
+    <h3>No tienes inscripciones activas</h3>
+    <p>Aún no te has inscrito en ningún evento. Te invitamos a conocer las actividades disponibles en nuestro catálogo institucional.</p>
+    <a href="{% url 'eventos:catalogo' %}" class="btn btn-primary">Ver Catálogo de Eventos</a>
+</div>
+{% endif %}
+{% endblock %}

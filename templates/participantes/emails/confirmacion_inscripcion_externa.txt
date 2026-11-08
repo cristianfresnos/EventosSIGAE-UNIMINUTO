@@ -1,0 +1,28 @@
+CONFIRMACIÓN DE INSCRIPCIÓN - SIGAE UNIMINUTO
+======================================================
+
+¡Hola, {{ participante.nombres }} {{ participante.apellidos }}!
+
+Tu inscripción al evento institucional ha sido confirmada satisfactoriamente en el Sistema Integral de Gestión de Asistencia a Eventos (SIGAE) de UNIMINUTO.
+
+DATOS DEL EVENTO:
+-----------------
+Evento: {{ evento.nombre }}
+Fecha: {{ evento.fecha|date:"d/m/Y" }}
+Horario: {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}
+Lugar: {{ evento.lugar }}
+Modalidad: {{ evento.get_modalidad_display }}
+Número de Inscripción: #{{ inscripcion.pk }}
+Documento registrado: {{ participante.documento }}
+
+ENLACE PERSONAL SEGURO:
+-----------------------
+Para consultar los detalles completos de tu inscripción y las instrucciones para el día del evento, accede al siguiente enlace personal:
+{{ enlace_acceso }}
+
+(Este enlace es personal y seguro, válido hasta el {{ fecha_expiracion|date:"d/m/Y" }}).
+
+------------------------------------------------------
+Corporación Universitaria Minuto de Dios — UNIMINUTO
+SIGAE — Sistema Integral de Gestión de Asistencia a Eventos
+Mensaje automático. Por favor no responder a esta dirección de correo.

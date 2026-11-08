@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+
+{% block title %}Gestionar Invitaciones — {{ evento.nombre }} | SIGAE{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:mis_eventos' %}">Gestión de Eventos</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre|truncatewords:5 }}</a>
+    <span class="sep">/</span>
+    <span class="current">Invitaciones</span>
+</div>
+
+<div class="management-header" style="margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <span class="badge badge-category">{{ evento.categoria.nombre }}</span>
+            <span class="badge {% if evento.modalidad_inscripcion == 'SOLO_INVITACION' %}badge-warning{% elif evento.modalidad_inscripcion == 'ABIERTA' %}badge-success{% else %}badge-info{% endif %}">
+                {{ evento.get_modalidad_inscripcion_display }}
+            </span>
+            <h1 style="font-size: 1.8rem; font-weight: 700; color: #002d62; margin: 0.5rem 0 0.25rem 0;">
+                Gestión de Invitaciones Institucionales
+            </h1>
+            <p style="color: #64748b; margin: 0;">Evento: <strong>{{ evento.nombre }}</strong></p>
+        </div>
+        <div>
+            <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">← Volver al Evento</a>
+        </div>
+    </div>
+</div>
+
+{% if not admite_invitaciones %}
+    <div class="alert alert-warning" style="margin-bottom: 2rem;">
+        <span class="alert-icon">⚠</span>
+        <div class="alert-text">
+            <strong>Modalidad no compatible con invitaciones individuales:</strong>
+            Este evento está configurado con modalidad de inscripción <strong>ABIERTA</strong>. Los participantes pueden inscribirse directamente desde el catálogo público. Para enviar invitaciones individuales, configure la modalidad en <em>Solo por invitación</em> o <em>Modalidad mixta</em>.
+        </div>
+    </div>
+{% else %}
+    <!-- Formulario para Enviar Invitación -->
+    <div class="action-card" style="margin-bottom: 2.5rem; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+        <h3 style="color: #002d62; font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">
+            ✉️ Invitar a un Nuevo Participante
+        </h3>
+        <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 1.25rem;">
+            El sistema generará un enlace seguro de invitación con vigencia de 3 días y enviará una notificación por correo electrónico.
+        </p>
+
+        <form method="post" action="{% url 'participantes:gestionar_invitaciones' evento.pk %}" novalidate>
+            {% csrf_token %}
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                    <label for="{{ form.correo.id_for_label }}" class="form-label">{{ form.correo.label }} *</label>
+                    {{ form.correo }}
+                    {% if form.correo.errors %}
+                        <div class="form-error">{{ form.correo.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.nombres.id_for_label }}" class="form-label">{{ form.nombres.label }} *</label>
+                    {{ form.nombres }}
+                    {% if form.nombres.errors %}
+                        <div class="form-error">{{ form.nombres.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.apellidos.id_for_label }}" class="form-label">{{ form.apellidos.label }} *</label>
+                    {{ form.apellidos }}
+                    {% if form.apellidos.errors %}
+                        <div class="form-error">{{ form.apellidos.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.institucion.id_for_label }}" class="form-label">{{ form.institucion.label }}</label>
+                    {{ form.institucion }}
+                    {% if form.institucion.errors %}
+                        <div class="form-error">{{ form.institucion.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div style="text-align: right;">
+                <button type="submit" class="btn btn-primary">Enviar Invitación por Correo</button>
+            </div>
+        </form>
+    </div>
+{% endif %}
+
+<!-- Tabla de Invitaciones Existentes -->
+<div class="table-container" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="color: #002d62; font-size: 1.25rem; font-weight: 600; margin: 0;">
+            Historial de Invitaciones ({{ total_invitaciones }})
+        </h3>
+    </div>
+
+    {% if total_invitaciones == 0 %}
+        <p style="color: #64748b; font-style: italic; padding: 1rem 0;">No se han emitido invitaciones para este evento.</p>
+    {% else %}
+        <table class="data-table" style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; color: #475569; font-size: 0.85rem;">
+                    <th style="padding: 0.75rem 0.5rem;">Invitado</th>
+                    <th style="padding: 0.75rem 0.5rem;">Correo</th>
+                    <th style="padding: 0.75rem 0.5rem;">Institución</th>
+                    <th style="padding: 0.75rem 0.5rem;">Estado</th>
+                    <th style="padding: 0.75rem 0.5rem;">Fecha Creación</th>
+                    <th style="padding: 0.75rem 0.5rem;">Vencimiento</th>
+                    <th style="padding: 0.75rem 0.5rem; text-align: right;">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in invitaciones %}
+                    <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.9rem;">
+                        <td style="padding: 0.75rem 0.5rem; font-weight: 600; color: #1e293b;">
+                            {{ inv.nombres }} {{ inv.apellidos }}
+                        </td>
+                        <td style="padding: 0.75rem 0.5rem; color: #475569;">
+                            {{ inv.correo }}
+                        </td>
+                        <td style="padding: 0.75rem 0.5rem; color: #64748b;">
+                            {{ inv.institucion|default:"-" }}
+                        </td>
+                        <td style="padding: 0.75rem 0.5rem;">
+                            {% if inv.estado == 'PENDIENTE' %}
+                                {% if inv.ha_expirado %}
+                                    <span class="badge" style="background: #fee2e2; color: #991b1b;">Expirada</span>
+                                {% else %}
+                                    <span class="badge" style="background: #fef3c7; color: #92400e;">Pendiente</span>
+                                {% endif %}
+                            {% elif inv.estado == 'ACEPTADA' %}
+                                <span class="badge" style="background: #dcfce7; color: #166534;">Aceptada</span>
+                            {% elif inv.estado == 'RECHAZADA' %}
+                                <span class="badge" style="background: #fee2e2; color: #991b1b;">Rechazada</span>
+                            {% elif inv.estado == 'EXPIRADA' %}
+                                <span class="badge" style="background: #f1f5f9; color: #64748b;">Expirada</span>
+                            {% elif inv.estado == 'CANCELADA' %}
+                                <span class="badge" style="background: #fee2e2; color: #991b1b;">Cancelada</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.75rem 0.5rem; color: #64748b; font-size: 0.85rem;">
+                            {{ inv.fecha_creacion|date:"d/m/Y H:i" }}
+                        </td>
+                        <td style="padding: 0.75rem 0.5rem; color: #64748b; font-size: 0.85rem;">
+                            {{ inv.fecha_expiracion|date:"d/m/Y H:i" }}
+                        </td>
+                        <td style="padding: 0.75rem 0.5rem; text-align: right;">
+                            {% if inv.estado == 'PENDIENTE' and not inv.ha_expirado %}
+                                <div style="display: inline-flex; gap: 0.5rem;">
+                                    <form method="post" action="{% url 'participantes:reenviar_invitacion' evento.pk inv.pk %}" style="display: inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-secondary" title="Renovar token y reenviar correo">Reenviar</button>
+                                    </form>
+                                    <form method="post" action="{% url 'participantes:cancelar_invitacion' evento.pk inv.pk %}" style="display: inline;" onsubmit="return confirm('¿Seguro que deseas cancelar esta invitación?');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Cancelar invitación">Cancelar</button>
+                                    </form>
+                                </div>
+                            {% elif inv.estado == 'ACEPTADA' %}
+                                <span style="font-size: 0.8rem; color: #166534;">Aceptada el {{ inv.fecha_aceptacion|date:"d/m/Y" }}</span>
+                            {% elif inv.estado == 'RECHAZADA' %}
+                                <span style="font-size: 0.8rem; color: #991b1b;">Rechazada el {{ inv.fecha_respuesta|date:"d/m/Y" }}</span>
+                            {% elif inv.estado == 'CANCELADA' %}
+                                <span style="font-size: 0.8rem; color: #991b1b;">Cancelada el {{ inv.fecha_cancelacion|date:"d/m/Y"|default:inv.fecha_respuesta|date:"d/m/Y" }}</span>
+                            {% else %}
+                                <span style="font-size: 0.8rem; color: #64748b;">Inactiva</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+</div>
+{% endblock %}
+

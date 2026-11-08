@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+
+{% block title %}Resultado de Inscripción | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:catalogo' %}">Catálogo de Eventos</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre|truncatewords:5 }}</a>
+    <span class="sep">/</span>
+    <span class="current">Estado de Inscripción</span>
+</div>
+
+<div class="result-layout" style="max-width: 650px; margin: 2rem auto; text-align: center;">
+    <div class="auth-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 2.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        
+        {% if estado == 'EXITOSA' or estado == 'REACTIVADA' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #16a34a;">🎉</div>
+            <h2 style="color: #002d62; font-size: 1.7rem; font-weight: 700; margin-bottom: 0.5rem;">
+                {% if estado == 'REACTIVADA' %}¡Inscripción Reactivada Exitosamente!{% else %}¡Inscripción Confirmada!{% endif %}
+            </h2>
+            <p style="color: #475569; font-size: 1rem; line-height: 1.6; margin-bottom: 1.5rem;">
+                Hola <strong>{{ participante.nombres }} {{ participante.apellidos }}</strong>, has quedado formalmente registrado(a) en:
+            </p>
+
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: left;">
+                <h3 style="color: #002d62; font-size: 1.15rem; font-weight: 600; margin-bottom: 0.5rem;">{{ evento.nombre }}</h3>
+                <div style="font-size: 0.9rem; color: #475569; line-height: 1.6;">
+                    <div>📅 <strong>Fecha:</strong> {{ evento.fecha|date:"d/m/Y" }}</div>
+                    <div>⏰ <strong>Horario:</strong> {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</div>
+                    <div>📍 <strong>Lugar:</strong> {{ evento.lugar }}</div>
+                    <div>🌐 <strong>Modalidad:</strong> {{ evento.get_modalidad_display }}</div>
+                </div>
+            </div>
+
+            {% if correo_enviado %}
+                <div class="alert alert-success" style="background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; text-align: left;">
+                    <strong style="color: #065f46; display: block; margin-bottom: 0.25rem;">✉️ Correo de confirmación enviado</strong>
+                    <p style="color: #047857; margin: 0; font-size: 0.9rem; line-height: 1.5;">
+                        Hemos enviado un mensaje a <strong>{{ participante.correo }}</strong> con tu <strong>enlace personal seguro</strong> para consultar los detalles de tu inscripción y las instrucciones del evento en cualquier momento. Por favor revisa tu bandeja de entrada o carpeta de spam.
+                    </p>
+                </div>
+            {% else %}
+                <div class="alert alert-warning" style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; text-align: left;">
+                    <strong style="color: #92400e; display: block; margin-bottom: 0.25rem;">⚠ Aviso sobre el servicio de correo</strong>
+                    <p style="color: #b45309; margin: 0; font-size: 0.9rem; line-height: 1.5;">
+                        Tu registro fue grabado correctamente en el sistema, pero el servidor de correo no pudo entregar el mensaje en este instante. Si requieres tu enlace de acceso personal, por favor contacta al organizador institucional del evento.
+                    </p>
+                </div>
+            {% endif %}
+
+        {% elif estado == 'YA_INSCRITO' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #0284c7;">ℹ️</div>
+            <h2 style="color: #002d62; font-size: 1.7rem; font-weight: 700; margin-bottom: 0.5rem;">
+                Ya te encuentras Inscrito(a)
+            </h2>
+            <p style="color: #475569; font-size: 1rem; line-height: 1.6; margin-bottom: 1.5rem;">
+                El participante con documento <strong>{{ participante.documento }}</strong> ya tiene una inscripción activa en <strong>{{ evento.nombre }}</strong>.
+            </p>
+
+            {% if correo_enviado %}
+                <div class="alert alert-info" style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; text-align: left;">
+                    <strong style="color: #0369a1; display: block; margin-bottom: 0.25rem;">✉️ Enlace personal reenviado</strong>
+                    <p style="color: #0284c7; margin: 0; font-size: 0.9rem; line-height: 1.5;">
+                        Para tu comodidad, hemos renovado y enviado tu enlace de acceso personal seguro al correo <strong>{{ participante.correo }}</strong>.
+                    </p>
+                </div>
+            {% endif %}
+
+        {% elif estado == 'SOLO_INVITACION' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #dc2626;">🔒</div>
+            <h2 style="color: #002d62; font-size: 1.7rem; font-weight: 700; margin-bottom: 0.5rem;">
+                Evento Exclusivo por Invitación
+            </h2>
+            <p style="color: #475569; font-size: 1rem; line-height: 1.6; margin-bottom: 1.5rem;">
+                Este evento institucional está configurado con modalidad <strong>Solo por invitación</strong> y no admite inscripciones públicas abiertas. Para participar debes recibir una invitación directa emitida por el profesor u organizador del evento.
+            </p>
+
+        {% elif estado == 'CUPO_AGOTADO' %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #dc2626;">🚫</div>
+            <h2 style="color: #002d62; font-size: 1.7rem; font-weight: 700; margin-bottom: 0.5rem;">
+                Cupo Completo
+            </h2>
+            <p style="color: #475569; font-size: 1rem; line-height: 1.6; margin-bottom: 1.5rem;">
+                Lo sentimos, el cupo máximo de asistentes para <strong>{{ evento.nombre }}</strong> ya se encuentra totalmente agotado.
+            </p>
+
+        {% else %}
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; color: #f59e0b;">⚠</div>
+            <h2 style="color: #002d62; font-size: 1.7rem; font-weight: 700; margin-bottom: 0.5rem;">
+                Inscripciones No Disponibles
+            </h2>
+            <p style="color: #475569; font-size: 1rem; line-height: 1.6; margin-bottom: 1.5rem;">
+                {{ mensaje|default:"El evento no admite inscripciones en este momento." }}
+            </p>
+        {% endif %}
+
+        <div style="margin-top: 2rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+            {% if evento %}
+                <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">← Volver al Evento</a>
+            {% endif %}
+            <a href="{% url 'eventos:catalogo' %}" class="btn btn-primary">Explorar Otros Eventos</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

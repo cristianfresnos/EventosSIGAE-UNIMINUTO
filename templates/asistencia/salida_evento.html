@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Registro de Salida | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre|truncatechars:30 }}</a>
+    <span class="sep">/</span>
+    <span class="current">Registro de Salida</span>
+</div>
+
+<div class="checkout-wrapper" style="max-width: 600px; margin: 2rem auto; padding: 0 1rem;">
+    <!-- Tarjeta Principal del Evento -->
+    <div class="card checkout-card" style="border-radius: 14px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; overflow: hidden; background: #ffffff;">
+        <div class="checkout-header" style="background: linear-gradient(135deg, #0f2b46 0%, #1e3a8a 100%); color: #ffffff; padding: 1.8rem 1.5rem; text-align: center;">
+            <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🚪</div>
+            <span class="badge" style="background: rgba(255,255,255,0.2); color: #ffffff; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.3rem 0.8rem; border-radius: 20px; display: inline-block; margin-bottom: 0.6rem;">
+                Control de Salida del Evento
+            </span>
+            <h2 style="font-size: 1.35rem; font-weight: 700; margin: 0.2rem 0; color: #ffffff; line-height: 1.3;">{{ evento.nombre }}</h2>
+            <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #cbd5e1;">
+                📍 {{ evento.lugar }} &bull; 📅 {{ evento.fecha|date:"d/m/Y" }}
+            </p>
+        </div>
+
+        <div class="checkout-body" style="padding: 1.8rem 1.5rem;">
+            {% if not salidas_activas %}
+                <!-- Salidas cerradas por el organizador -->
+                <div class="alert alert-warning" style="background: #fefce8; border: 1px solid #fef08a; color: #854d0e; padding: 1.2rem; border-radius: 10px; text-align: center; margin-bottom: 1.5rem;">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
+                    <h3 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 0.4rem; color: #854d0e;">Registro de salidas no disponible</h3>
+                    <p style="font-size: 0.9rem; margin: 0; line-height: 1.4;">
+                        El organizador del evento aún no ha habilitado el registro de salidas o el período de salida ha finalizado. Por favor comunícate con el personal de logística.
+                    </p>
+                </div>
+                <div style="text-align: center;">
+                    <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary" style="border-radius: 8px;">
+                        ← Volver a la información del evento
+                    </a>
+                </div>
+
+            {% elif resultado and resultado.exito %}
+                <!-- Éxito en el registro de salida -->
+                <div class="checkout-success-box" style="text-align: center; padding: 1rem 0;">
+                    <div style="width: 70px; height: 70px; background: #dcfce7; color: #16a34a; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin: 0 auto 1.2rem auto;">
+                        ✓
+                    </div>
+                    <h3 style="color: #166534; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem;">
+                        ¡Salida Registrada con Éxito!
+                    </h3>
+                    <p style="color: #475569; font-size: 0.95rem; margin-bottom: 1.5rem;">
+                        Gracias por tu participación en este evento institucional.
+                    </p>
+
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.2rem; margin-bottom: 1.5rem; text-align: left;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.6rem; font-size: 0.9rem;">
+                            <span style="color: #64748b;">Participante:</span>
+                            <strong style="color: #0f2b46;">{{ resultado.participante }}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.6rem; font-size: 0.9rem;">
+                            <span style="color: #64748b;">Hora de Salida:</span>
+                            <strong style="color: #0f2b46;">{{ resultado.asistencia.hora_salida|time:"H:i:s" }}</strong>
+                        </div>
+                        {% if resultado.permanencia %}
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding-top: 0.6rem; border-top: 1px dashed #cbd5e1;">
+                            <span style="color: #64748b;">Tiempo de Permanencia:</span>
+                            <strong style="color: #16a34a; font-size: 1rem;">⏱️ {{ resultado.permanencia.texto }}</strong>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-weight: 600; border-radius: 8px;">
+                        ← Volver a la ficha del evento
+                    </a>
+                </div>
+
+            {% else %}
+                <!-- Formulario de confirmación de salida con identidad de sesión -->
+                {% if resultado and not resultado.exito %}
+                    <div class="alert alert-danger" style="background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 1rem; border-radius: 8px; margin-bottom: 1.2rem; font-size: 0.9rem;">
+                        <strong>⚠ Atención:</strong> {{ resultado.mensaje }}
+                        {% if resultado.permanencia %}
+                            <div style="margin-top: 0.5rem; font-weight: 600;">
+                                Tiempo de permanencia registrado: {{ resultado.permanencia.texto }}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if inscripcion_usuario %}
+                    <p style="color: #475569; font-size: 0.92rem; margin-bottom: 1.4rem; text-align: center; line-height: 1.4;">
+                        Se ha detectado tu identidad verificada en sesión para este evento. Haz clic para confirmar tu registro de salida:
+                    </p>
+
+                    <form method="post" action="{% url 'asistencia:salida_evento_publica' evento.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="token_evento" value="{{ token_evento }}">
+
+                        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 1rem; margin-bottom: 1.4rem;">
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                <span style="font-size: 1.5rem;">👤</span>
+                                <div>
+                                    <div style="font-size: 0.8rem; color: #166534; font-weight: 600; text-transform: uppercase;">
+                                        Identidad Validada en Sesión
+                                    </div>
+                                    <div style="font-size: 1rem; font-weight: 700; color: #0f2b46;">
+                                        {{ inscripcion_usuario.participante.nombres }} {{ inscripcion_usuario.participante.apellidos }}
+                                    </div>
+                                    <div style="font-size: 0.82rem; color: #64748b;">
+                                        Documento: {{ inscripcion_usuario.participante.documento }} &bull; Tipo: {{ inscripcion_usuario.participante.get_tipo_display }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.85rem; font-size: 1rem; font-weight: 700; border-radius: 8px; background: #0f2b46;">
+                            🚪 Confirmar Mi Salida del Evento
+                        </button>
+                    </form>
+
+                {% else %}
+                    <!-- Participante sin sesión validada -->
+                    <div class="alert alert-info" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 1.3rem; border-radius: 10px; margin-bottom: 1.4rem; text-align: left;">
+                        <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+                            <span style="font-size: 1.8rem; line-height: 1;">🔒</span>
+                            <div>
+                                <h4 style="font-size: 1rem; font-weight: 700; margin: 0 0 0.4rem 0; color: #1e3a8a;">
+                                    Identificación de Asistencia Requerida
+                                </h4>
+                                <p style="font-size: 0.88rem; margin: 0 0 0.6rem 0; line-height: 1.45; color: #334155;">
+                                    Para confirmar tu salida de este evento debes contar con una sesión activa en el sistema institucional o haber ingresado desde tu enlace personal de participante externo.
+                                </p>
+                                <p style="font-size: 0.82rem; margin: 0; color: #64748b; line-height: 1.4;">
+                                    <em>Por políticas institucionales de seguridad y prevención de suplantación (Anti-IDOR), no está permitido el registro de salida mediante ingreso manual de documento o correo ajeno.</em>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <a href="{% url 'usuarios:login' %}?next={{ request.get_full_path|urlencode }}" class="btn btn-primary" style="width: 100%; padding: 0.85rem; text-align: center; font-weight: 700; border-radius: 8px; background: #0f2b46;">
+                            🔑 Iniciar Sesión Institucional
+                        </a>
+                    </div>
+                {% endif %}
+
+                <div style="margin-top: 1.5rem; text-align: center;">
+                    <a href="{% url 'eventos:detalle' evento.pk %}" style="font-size: 0.85rem; color: #64748b; text-decoration: none;">
+                        ← Volver a la información del evento
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

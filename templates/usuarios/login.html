@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+
+{% block title %}Iniciar Sesión | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <div class="auth-header">
+            <span class="brand-badge">Acceso Seguro</span>
+            <h2>Iniciar Sesión</h2>
+            <p class="subtitle">Ingresa con tus credenciales institucionales de SIGAE.</p>
+        </div>
+
+        <form method="post" action="{% url 'usuarios:login' %}" novalidate class="auth-form">
+            {% csrf_token %}
+            {% if next %}
+                <input type="hidden" name="next" value="{{ next }}">
+            {% endif %}
+
+            <div class="form-group">
+                <label for="{{ form.username.id_for_label }}" class="form-label">{{ form.username.label }}</label>
+                {{ form.username }}
+                {% if form.username.errors %}
+                    <div class="form-error">{{ form.username.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <div class="form-group">
+                <label for="{{ form.password.id_for_label }}" class="form-label">{{ form.password.label }}</label>
+                {{ form.password }}
+                {% if form.password.errors %}
+                    <div class="form-error">{{ form.password.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <div style="text-align: right; margin-bottom: 1.2rem;">
+                <a href="{% url 'usuarios:password_reset' %}" style="font-size: 0.85rem; color: #0284c7; text-decoration: none; font-weight: 500;">
+                    ¿Olvidaste tu contraseña?
+                </a>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-block">Ingresar al Sistema</button>
+            </div>
+        </form>
+
+        <div class="auth-footer">
+            <p class="text-muted">¿No tienes una cuenta de usuario?</p>
+            <p><a href="{% url 'usuarios:registro' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Crear una nueva cuenta</a></p>
+            <div style="margin-top: 0.5rem; border-top: 1px solid #e2e8f0; padding-top: 0.5rem;">
+                <p class="text-muted" style="margin-bottom: 0.25rem;">¿Deseas explorar los eventos disponibles?</p>
+                <p><a href="{% url 'eventos:catalogo' %}">Consultar catálogo institucional</a></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

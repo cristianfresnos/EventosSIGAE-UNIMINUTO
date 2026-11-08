@@ -1,0 +1,241 @@
+{% extends 'base.html' %}
+
+{% block title %}Mi Inscripción | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:catalogo' %}">Catálogo de Eventos</a>
+    <span class="sep">/</span>
+    <span class="current">Mi Inscripción Personal</span>
+</div>
+
+<div class="external-portal-layout" style="max-width: 800px; margin: 2rem auto;">
+    <!-- Encabezado de la Página Personal -->
+    <div class="portal-header" style="background: linear-gradient(135deg, #002d62 0%, #004080 100%); color: #ffffff; border-radius: 12px 12px 0 0; padding: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <span class="badge" style="background: #22c55e; color: #ffffff; padding: 0.35rem 0.8rem; border-radius: 6px; font-size: 0.82rem; font-weight: 600;">
+                    Inscripción Confirmada
+                </span>
+                <h1 style="font-size: 1.75rem; font-weight: 700; margin: 0.75rem 0 0.25rem 0; color: #ffffff;">
+                    Portal de Participante Externo
+                </h1>
+                <p style="margin: 0; color: #cbd5e1; font-size: 0.95rem;">
+                    Bienvenido(a), <strong>{{ participante.nombres }} {{ participante.apellidos }}</strong>
+                </p>
+            </div>
+            <div style="text-align: right;">
+                <span style="font-size: 0.8rem; color: #94a3b8; display: block;">Identificador de Inscripción</span>
+                <span style="font-size: 1.25rem; font-weight: 700; color: #f8fafc;">#{{ inscripcion.pk }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cuerpo del Portal -->
+    <div class="portal-body" style="background: #ffffff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; padding: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        
+        <!-- Tarjeta de Detalles del Evento -->
+        <section style="margin-bottom: 2rem;">
+            <h2 style="color: #002d62; font-size: 1.35rem; font-weight: 700; margin-bottom: 1rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem;">
+                📌 Datos del Evento
+            </h2>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem;">
+                <h3 style="color: #002d62; font-size: 1.2rem; font-weight: 700; margin-top: 0; margin-bottom: 0.75rem;">
+                    {{ evento.nombre }}
+                </h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; font-size: 0.92rem; color: #334155; margin-bottom: 1rem;">
+                    <div>📅 <strong>Fecha:</strong> {{ evento.fecha|date:"d/m/Y" }}</div>
+                    <div>⏰ <strong>Horario:</strong> {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</div>
+                    <div>📍 <strong>Lugar:</strong> {{ evento.lugar }}</div>
+                    <div>🌐 <strong>Modalidad:</strong> {{ evento.get_modalidad_display }}</div>
+                    <div>🏷 <strong>Categoría:</strong> {{ evento.categoria.nombre }}</div>
+                    <div>👤 <strong>Organizador:</strong> {{ evento.organizador.get_full_name|default:evento.organizador.username }}</div>
+                </div>
+
+                {% if evento.descripcion %}
+                    <div style="border-top: 1px dashed #cbd5e1; padding-top: 0.85rem; color: #475569; font-size: 0.9rem; line-height: 1.6;">
+                        <strong>Descripción:</strong><br>
+                        {{ evento.descripcion|linebreaks }}
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- Tarjeta de Datos de la Inscripción -->
+        <section style="margin-bottom: 2rem;">
+            <h2 style="color: #002d62; font-size: 1.35rem; font-weight: 700; margin-bottom: 1rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem;">
+                📋 Tu Inscripción
+            </h2>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; font-size: 0.92rem; color: #334155;">
+                    <div><strong>Estado:</strong> <span class="badge badge-success">{{ inscripcion.get_estado_display }}</span></div>
+                    <div><strong>Fecha de registro:</strong> {{ inscripcion.fecha_inscripcion|date:"d/m/Y H:i" }}</div>
+                    <div><strong>Documento:</strong> {{ participante.documento }}</div>
+                    <div><strong>Correo registrado:</strong> {{ participante.correo }}</div>
+                    {% if participante.telefono %}
+                        <div><strong>Teléfono:</strong> {{ participante.telefono }}</div>
+                    {% endif %}
+                    {% if participante.institucion %}
+                        <div><strong>Institución:</strong> {{ participante.institucion }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <!-- Pase de Asistencia y Código QR Personal (Etapa 7.3) -->
+        <section style="margin-bottom: 2rem;">
+            <h2 style="color: #002d62; font-size: 1.35rem; font-weight: 700; margin-bottom: 1rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem;">
+                🎟️ Tu Pase de Asistencia y Código QR
+            </h2>
+            <div style="background: #ffffff; border: 2px solid #cbd5e1; border-radius: 12px; padding: 1.5rem; display: grid; grid-template-columns: 1fr 180px; gap: 1.5rem; align-items: center;" class="ext-pass-grid">
+                <div>
+                    <h3 style="color: #002d62; font-size: 1.1rem; font-weight: 700; margin-top: 0; margin-bottom: 0.5rem;">
+                        Código de Llegada Dinámico
+                    </h3>
+                    <p style="color: #64748b; font-size: 0.88rem; margin-bottom: 0.8rem; line-height: 1.5;">
+                        Presenta este código ante el operador en la mesa de registro para confirmar tu llegada. Por tu seguridad, el código se actualiza periódicamente.
+                    </p>
+
+                    <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem;">
+                        <div>
+                            <span style="font-size: 0.82rem; color: #475569; font-weight: 600;">Llegada (Check-in): </span>
+                            {% if llegada_registrada %}
+                                <span class="badge badge-success" id="extBadgeLlegada">✓ Registrada {{ asistencia.hora_entrada|time:"H:i" }}</span>
+                            {% else %}
+                                <span class="badge badge-warning" id="extBadgeLlegada" style="background: #eab308; color: #000;">⏳ Pendiente de registro</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <span style="font-size: 0.82rem; color: #475569; font-weight: 600;">Salida (Checkout): </span>
+                            {% if salida_registrada %}
+                                <span class="badge badge-success" id="extBadgeSalida">✓ Registrada {{ asistencia.hora_salida|time:"H:i" }} ({{ asistencia.minutos_permanencia }}m)</span>
+                            {% elif salidas_habilitadas and llegada_registrada %}
+                                <span class="badge badge-info" id="extBadgeSalida" style="background: #0284c7; color: #fff;">🚪 Salidas Habilitadas</span>
+                            {% else %}
+                                <span class="badge badge-secondary" id="extBadgeSalida">⏳ Pendiente</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <a href="{% url 'asistencia:pase_digital' inscripcion.pk %}?token={{ acceso.token }}" class="btn btn-secondary btn-sm" target="_blank">
+                            🖨️ Ver Pase Imprimible
+                        </a>
+                        {% if salidas_habilitadas and llegada_registrada and not salida_registrada %}
+                            <a href="{% url 'asistencia:escanear_salida' evento.pk %}?token={{ acceso.token }}" class="btn btn-warning btn-sm" style="background: #eab308; color: #000; font-weight: 700; border: none;">
+                                🚪 Escanear QR de Salida
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- QR Imagen & Timer -->
+                <div style="text-align: center; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 0.8rem;">
+                    {% if qr_base64 %}
+                        <img src="data:image/png;base64,{{ qr_base64 }}" alt="QR de Asistencia" id="extQrImage" style="width: 140px; height: 140px; display: block; margin: 0 auto; border-radius: 4px;" />
+                        <div style="margin-top: 0.5rem;">
+                            <div style="background: #e2e8f0; height: 3px; border-radius: 3px; overflow: hidden; width: 100%;">
+                                <div id="extProgressBar" style="background: #2563eb; width: 100%; height: 100%; transition: width 1s linear;"></div>
+                            </div>
+                            <span style="font-size: 0.7rem; color: #64748b; margin-top: 0.2rem; display: block;">
+                                Dinámico (<span id="extCountdown">30</span>s)
+                            </span>
+                        </div>
+                    {% else %}
+                        <div style="color: #94a3b8; font-size: 0.85rem; padding: 1rem 0;">QR no disponible</div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <!-- Indicaciones para el Día del Evento -->
+        <section style="margin-bottom: 2rem;">
+            <h2 style="color: #002d62; font-size: 1.35rem; font-weight: 700; margin-bottom: 1rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem;">
+                ℹ️ Indicaciones Importantes
+            </h2>
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 1.5rem; color: #1e3a8a;">
+                <ul style="margin: 0; padding-left: 1.25rem; line-height: 1.7; font-size: 0.92rem;">
+                    <li><strong>Puntualidad:</strong> Te sugerimos presentarte con al menos 15 minutos de anticipación a la hora señalada.</li>
+                    <li><strong>Documento de identidad:</strong> Presenta tu documento físico oficial ({{ participante.documento }}) al momento del registro de ingreso.</li>
+                    <li><strong>Control de asistencia:</strong> En el acceso al recinto se realizará la validación de asistencia institucional.</li>
+                    <li><strong>Enlace personal seguro:</strong> Guarda el enlace que recibiste por correo electrónico para volver a consultar esta información en cualquier momento.</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Acciones del Portal -->
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #e2e8f0; padding-top: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+            <a href="{% url 'eventos:catalogo' %}" class="btn btn-secondary">← Catálogo de Eventos</a>
+            <span style="font-size: 0.85rem; color: #94a3b8;">
+                Acceso personal seguro — UNIMINUTO SIGAE
+            </span>
+        </div>
+    </div>
+</div>
+
+<style>
+@media (max-width: 600px) {
+    .ext-pass-grid {
+        grid-template-columns: 1fr !important;
+        text-align: center;
+    }
+}
+</style>
+
+<script>
+{% if qr_base64 and not salida_registrada %}
+(function() {
+    let timeLeft = 30;
+    const totalTime = 30;
+    const countdownEl = document.getElementById('extCountdown');
+    const progressBar = document.getElementById('extProgressBar');
+    const qrImg = document.getElementById('extQrImage');
+
+    const interval = setInterval(async () => {
+        timeLeft--;
+        if (countdownEl) countdownEl.innerText = timeLeft;
+        if (progressBar) {
+            const pct = Math.max(0, (timeLeft / totalTime) * 100);
+            progressBar.style.width = pct + '%';
+        }
+
+        if (timeLeft <= 0) {
+            timeLeft = totalTime;
+            if (progressBar) progressBar.style.width = '100%';
+            await fetchNuevoQR();
+        }
+    }, 1000);
+
+    async function fetchNuevoQR() {
+        try {
+            const res = await fetch("{% url 'asistencia:qr_dinamico' inscripcion.pk %}?token={{ acceso.token }}", {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const data = await res.json();
+            if (data.exito && data.qr_base64 && qrImg) {
+                qrImg.src = "data:image/png;base64," + data.qr_base64;
+            }
+            if (data.llegada_registrada) {
+                const bLlegada = document.getElementById('extBadgeLlegada');
+                if (bLlegada) {
+                    bLlegada.className = 'badge badge-success';
+                    bLlegada.innerText = '✓ Llegada Registrada';
+                }
+            }
+            if (data.salida_registrada) {
+                const bSalida = document.getElementById('extBadgeSalida');
+                if (bSalida) {
+                    bSalida.className = 'badge badge-success';
+                    bSalida.innerText = '✓ Salida Registrada';
+                }
+            }
+        } catch (e) {
+            console.warn('Error renovando QR dinámico:', e);
+        }
+    }
+})();
+{% endif %}
+</script>
+{% endblock %}

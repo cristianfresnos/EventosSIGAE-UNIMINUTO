@@ -1,0 +1,419 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Bitácora de Auditoría y Seguridad | SIGAE — UNIMINUTO{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ==========================================================================
+   ESTILOS DE LA BITÁCORA DE AUDITORÍA (RF-23 - SIGAE UNIMINUTO)
+   ========================================================================== */
+.audit-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-bottom: 3rem;
+}
+
+.audit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    margin-bottom: 1.75rem;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    padding: 1.5rem 2rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+}
+
+.audit-title-group h2 {
+    font-size: 1.75rem;
+    color: var(--primary);
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.audit-title-group p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+.audit-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.3rem 0.75rem;
+    border-radius: 9999px;
+    background-color: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+.audit-badge-readonly {
+    background-color: #f8fafc;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+}
+
+/* Tarjeta de Filtros */
+.filter-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.75rem;
+}
+
+.filter-header h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--primary);
+    margin: 0;
+}
+
+.filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    align-items: flex-end;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 0.5rem;
+    grid-column: span 2;
+}
+
+@media (max-width: 768px) {
+    .filter-actions {
+        grid-column: span 1;
+    }
+}
+
+/* Badges de Módulos */
+.badge-modulo {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.badge-mod-eventos { background-color: #e0f2fe; color: #0369a1; }
+.badge-mod-asistencia { background-color: #fef3c7; color: #b45309; }
+.badge-mod-auditoria { background-color: #f3e8ff; color: #7e22ce; }
+.badge-mod-analitica { background-color: #dcfce7; color: #15803d; }
+.badge-mod-autenticacion { background-color: #fee2e2; color: #b91c1c; }
+.badge-mod-default { background-color: #f1f5f9; color: #475569; }
+
+/* Tabla de Bitácora */
+.log-table-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+
+.log-table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background-color: #f8fafc;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.log-table-header span {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+.log-table th {
+    background-color: #f1f5f9;
+    color: var(--text-main);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.log-table td {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border-light, #e2e8f0);
+    vertical-align: middle;
+}
+
+.log-table tr:hover {
+    background-color: #f8fafc;
+}
+
+.log-time {
+    font-family: monospace;
+    font-size: 0.85rem;
+    color: var(--text-main);
+    white-space: nowrap;
+}
+
+.log-ip {
+    font-family: monospace;
+    font-size: 0.82rem;
+    color: #64748b;
+    background: #f1f5f9;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.log-action-code {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.log-detail {
+    color: #334155;
+    line-height: 1.4;
+    word-break: break-word;
+    max-width: 450px;
+}
+
+/* Paginación */
+.pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--border-color);
+    background: #ffffff;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.pagination-links {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+}
+
+.page-btn {
+    padding: 0.35rem 0.75rem;
+    border: 1px solid var(--border-color);
+    background: #ffffff;
+    color: var(--text-main);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.page-btn:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.page-btn.active {
+    background: var(--primary);
+    color: #ffffff;
+    border-color: var(--primary);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    color: var(--text-muted);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="audit-container">
+
+    <!-- Cabecera de la Bitácora -->
+    <div class="audit-header">
+        <div class="audit-title-group">
+            <span class="badge badge-primary">Seguridad y Trazabilidad</span>
+            <h2>🛡️ Bitácora Institucional de Auditoría</h2>
+            <p>Registro histórico, inmutable y cronológico de todas las operaciones críticas ejecutadas en el sistema (RF-23).</p>
+        </div>
+        <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+            <span class="audit-badge audit-badge-readonly">🔒 Modo Solo Lectura</span>
+            <span class="audit-badge">Total Coincidentes: <strong>{{ total_registros }}</strong></span>
+        </div>
+    </div>
+
+    <!-- Filtros de Consulta -->
+    <div class="filter-card">
+        <div class="filter-header">
+            <h3>Filtros de Trazabilidad</h3>
+            <span style="font-size: 0.82rem; color: var(--text-muted);">Aplica criterios combinados para auditar acciones</span>
+        </div>
+        <form method="get" class="filter-grid" id="auditFilterForm">
+            <div class="form-group">
+                <label for="modulo" class="form-label">Módulo:</label>
+                <select name="modulo" id="modulo" class="form-control">
+                    <option value="">-- Todos los Módulos --</option>
+                    {% for mod in modulos %}
+                        <option value="{{ mod }}" {% if filtro_modulo == mod %}selected{% endif %}>{{ mod }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="accion" class="form-label">Acción Específica:</label>
+                <input type="text" name="accion" id="accion" class="form-control" placeholder="Ej: CANCELAR_EVENTO" value="{{ filtro_accion }}">
+            </div>
+
+            <div class="form-group">
+                <label for="usuario" class="form-label">Usuario:</label>
+                <input type="text" name="usuario" id="usuario" class="form-control" placeholder="Username o nombre..." value="{{ filtro_usuario }}">
+            </div>
+
+            <div class="form-group">
+                <label for="fecha_desde" class="form-label">Fecha Desde:</label>
+                <input type="date" name="fecha_desde" id="fecha_desde" class="form-control" value="{{ filtro_fecha_desde }}">
+            </div>
+
+            <div class="form-group">
+                <label for="fecha_hasta" class="form-label">Fecha Hasta:</label>
+                <input type="date" name="fecha_hasta" id="fecha_hasta" class="form-control" value="{{ filtro_fecha_hasta }}">
+            </div>
+
+            <div class="form-group">
+                <label for="q" class="form-label">Búsqueda General / IP:</label>
+                <input type="text" name="q" id="q" class="form-control" placeholder="Detalle, IP o registro..." value="{{ filtro_q }}">
+            </div>
+
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-primary" style="flex: 1;">🔍 Filtrar Bitácora</button>
+                <a href="{% url 'auditoria:consulta_auditoria' %}" class="btn btn-secondary" title="Limpiar todos los filtros">↺ Limpiar</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Listado de Registros de Auditoría -->
+    <div class="log-table-card">
+        <div class="log-table-header">
+            <span>Mostrando página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} (25 registros por página)</span>
+            <span style="font-size: 0.8rem; color: #64748b;">Protección de integridad: No se permite borrado ni alteración</span>
+        </div>
+
+        {% if page_obj.object_list %}
+        <div class="table-responsive">
+            <table class="log-table">
+                <thead>
+                    <tr>
+                        <th style="width: 165px;">Fecha / Hora</th>
+                        <th style="width: 110px;">Módulo</th>
+                        <th style="width: 170px;">Acción</th>
+                        <th style="width: 150px;">Usuario Responsable</th>
+                        <th>Registro Afectado / Detalle de Operación</th>
+                        <th style="width: 120px;">Dirección IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in page_obj %}
+                    <tr>
+                        <td class="log-time">
+                            {{ log.fecha|date:"d/m/Y H:i:s" }}
+                        </td>
+                        <td>
+                            {% if log.modulo == 'EVENTOS' %}
+                                <span class="badge-modulo badge-mod-eventos">{{ log.modulo }}</span>
+                            {% elif log.modulo == 'ASISTENCIA' %}
+                                <span class="badge-modulo badge-mod-asistencia">{{ log.modulo }}</span>
+                            {% elif log.modulo == 'AUDITORIA' %}
+                                <span class="badge-modulo badge-mod-auditoria">{{ log.modulo }}</span>
+                            {% elif log.modulo == 'ANALITICA' %}
+                                <span class="badge-modulo badge-mod-analitica">{{ log.modulo }}</span>
+                            {% elif log.modulo == 'AUTENTICACION' %}
+                                <span class="badge-modulo badge-mod-autenticacion">{{ log.modulo }}</span>
+                            {% else %}
+                                <span class="badge-modulo badge-mod-default">{{ log.modulo|default:"GENERAL" }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="log-action-code">{{ log.accion }}</span>
+                        </td>
+                        <td>
+                            {% if log.usuario %}
+                                <strong>{{ log.usuario.username }}</strong>
+                                <div style="font-size: 0.78rem; color: var(--text-muted);">
+                                    {{ log.usuario.get_full_name|default:"" }}
+                                </div>
+                            {% else %}
+                                <span style="color: #94a3b8; font-style: italic;">Sistema / Anónimo</span>
+                            {% endif %}
+                        </td>
+                        <td class="log-detail">
+                            {{ log.registro_afectado }}
+                        </td>
+                        <td>
+                            <span class="log-ip">{{ log.ip|default:"—" }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Paginación Segura -->
+        {% if page_obj.has_other_pages %}
+        <div class="pagination-container">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">
+                Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+            </div>
+            <div class="pagination-links">
+                {% if page_obj.has_previous %}
+                    <a href="?page=1{% if filtro_modulo %}&modulo={{ filtro_modulo }}{% endif %}{% if filtro_accion %}&accion={{ filtro_accion }}{% endif %}{% if filtro_usuario %}&usuario={{ filtro_usuario }}{% endif %}{% if filtro_fecha_desde %}&fecha_desde={{ filtro_fecha_desde }}{% endif %}{% if filtro_fecha_hasta %}&fecha_hasta={{ filtro_fecha_hasta }}{% endif %}{% if filtro_q %}&q={{ filtro_q }}{% endif %}" class="page-btn">« Primero</a>
+                    <a href="?page={{ page_obj.previous_page_number }}{% if filtro_modulo %}&modulo={{ filtro_modulo }}{% endif %}{% if filtro_accion %}&accion={{ filtro_accion }}{% endif %}{% if filtro_usuario %}&usuario={{ filtro_usuario }}{% endif %}{% if filtro_fecha_desde %}&fecha_desde={{ filtro_fecha_desde }}{% endif %}{% if filtro_fecha_hasta %}&fecha_hasta={{ filtro_fecha_hasta }}{% endif %}{% if filtro_q %}&q={{ filtro_q }}{% endif %}" class="page-btn">‹ Anterior</a>
+                {% endif %}
+
+                <span class="page-btn active">{{ page_obj.number }}</span>
+
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}{% if filtro_modulo %}&modulo={{ filtro_modulo }}{% endif %}{% if filtro_accion %}&accion={{ filtro_accion }}{% endif %}{% if filtro_usuario %}&usuario={{ filtro_usuario }}{% endif %}{% if filtro_fecha_desde %}&fecha_desde={{ filtro_fecha_desde }}{% endif %}{% if filtro_fecha_hasta %}&fecha_hasta={{ filtro_fecha_hasta }}{% endif %}{% if filtro_q %}&q={{ filtro_q }}{% endif %}" class="page-btn">Siguiente ›</a>
+                    <a href="?page={{ page_obj.paginator.num_pages }}{% if filtro_modulo %}&modulo={{ filtro_modulo }}{% endif %}{% if filtro_accion %}&accion={{ filtro_accion }}{% endif %}{% if filtro_usuario %}&usuario={{ filtro_usuario }}{% endif %}{% if filtro_fecha_desde %}&fecha_desde={{ filtro_fecha_desde }}{% endif %}{% if filtro_fecha_hasta %}&fecha_hasta={{ filtro_fecha_hasta }}{% endif %}{% if filtro_q %}&q={{ filtro_q }}{% endif %}" class="page-btn">Último »</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="empty-state">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🔍</div>
+            <h3>No se encontraron registros de auditoría</h3>
+            <p>No existen operaciones registradas que coincidan con los criterios de filtro aplicados.</p>
+            <a href="{% url 'auditoria:consulta_auditoria' %}" class="btn btn-secondary" style="margin-top: 1rem;">Limpiar Filtros</a>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

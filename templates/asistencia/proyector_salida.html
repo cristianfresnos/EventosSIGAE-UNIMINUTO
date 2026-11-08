@@ -1,0 +1,156 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Proyección de Salida | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav no-print">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre|truncatewords:4 }}</a>
+    <span class="sep">/</span>
+    <span class="current">Pantalla de Salida Colectiva</span>
+</div>
+
+<div class="projector-container" style="max-width: 900px; margin: 1.5rem auto; text-align: center;">
+    <div class="card" style="border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px rgba(0,0,0,0.08); overflow: hidden; background: #ffffff;">
+        
+        <!-- Encabezado de Proyección -->
+        <div style="background: linear-gradient(135deg, #002d62 0%, #004080 100%); color: #ffffff; padding: 2rem 1.5rem;">
+            <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                <span class="badge" style="background: {% if salidas_habilitadas %}#22c55e{% else %}#ef4444{% endif %}; color: #ffffff; font-size: 0.85rem; font-weight: 700; padding: 0.35rem 0.85rem; border-radius: 20px;">
+                    {% if salidas_habilitadas %}● SESIÓN DE SALIDA ACTIVA{% else %}✕ SESIÓN CERRADA{% endif %}
+                </span>
+                <span class="badge" style="background: rgba(255,255,255,0.2); color: #ffffff; font-size: 0.85rem; padding: 0.35rem 0.85rem; border-radius: 20px;">
+                    ID: {{ control.sesion_id|default:"Sin sesión" }}
+                </span>
+            </div>
+
+            <h1 style="font-size: 1.85rem; font-weight: 800; margin: 0.5rem 0; color: #ffffff; line-height: 1.25;">
+                {{ evento.nombre }}
+            </h1>
+            <p style="margin: 0; font-size: 1rem; color: #cbd5e1;">
+                📍 {{ evento.lugar }} &bull; 📅 {{ evento.fecha|date:"d/m/Y" }} &bull; ⏰ {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}
+            </p>
+        </div>
+
+        <!-- Cuerpo del Proyector -->
+        <div style="padding: 2.5rem 1.5rem;">
+            {% if salidas_habilitadas %}
+                <div style="margin-bottom: 1.5rem;">
+                    <h2 style="font-size: 1.4rem; color: #002d62; font-weight: 700; margin-bottom: 0.5rem;">
+                        Escanea este código con la cámara de tu celular
+                    </h2>
+                    <p style="color: #64748b; font-size: 0.95rem; margin: 0;">
+                        Abre la cámara de tu dispositivo o la opción <strong>"Registrar Salida"</strong> desde tu página personal.
+                    </p>
+                </div>
+
+                <!-- Contenedor del QR -->
+                <div style="display: inline-block; padding: 1.25rem; background: #ffffff; border: 3px solid #002d62; border-radius: 20px; box-shadow: 0 8px 24px rgba(0,45,98,0.12); margin-bottom: 1.5rem;">
+                    <img id="qrSalidaImg" src="data:image/png;base64,{{ qr_base64 }}" alt="QR Colectivo de Salida" style="width: 280px; height: 280px; display: block; image-rendering: pixelated;">
+                </div>
+
+                <!-- Temporizador de Rotación -->
+                <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem; margin-bottom: 2rem; color: #475569; font-size: 0.9rem;">
+                    <span>🔄 Rotación de seguridad en:</span>
+                    <strong id="contadorRotacion" style="color: #002d62; font-size: 1.1rem;">30</strong>s
+                    <div style="width: 140px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin-left: 0.5rem;">
+                        <div id="barraProgreso" style="width: 100%; height: 100%; background: #002d62; transition: width 1s linear;"></div>
+                    </div>
+                </div>
+
+                <!-- Métricas de Asistencia en Vivo -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; max-width: 600px; margin: 0 auto 2rem auto;">
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem;">
+                        <span style="font-size: 0.8rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Llegadas Registradas</span>
+                        <span style="font-size: 1.8rem; font-weight: 800; color: #002d62;">{{ total_llegadas }}</span>
+                    </div>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem;">
+                        <span style="font-size: 0.8rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Salidas Registradas</span>
+                        <span style="font-size: 1.8rem; font-weight: 800; color: #16a34a;">{{ total_salidas }}</span>
+                    </div>
+                </div>
+
+                <!-- Botones de Acción del Profesor -->
+                <div class="no-print" style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+                    <form method="post" action="{% url 'asistencia:cerrar_sesion_salida' evento.pk %}" style="display: inline;">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'asistencia:proyector_salida' evento.pk %}">
+                        <button type="submit" class="btn btn-danger" style="padding: 0.75rem 1.5rem; font-weight: 600; border-radius: 8px;">
+                            ⏹️ Cerrar Sesión de Salida
+                        </button>
+                    </form>
+                    <a href="{% url 'asistencia:control_asistencia' evento.pk %}" class="btn btn-secondary" style="padding: 0.75rem 1.5rem; border-radius: 8px;">
+                        ← Panel de Control
+                    </a>
+                    <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary" style="padding: 0.75rem 1.5rem; border-radius: 8px;">
+                        Detalle del Evento
+                    </a>
+                </div>
+
+            {% else %}
+                <div style="padding: 3rem 1rem; max-width: 500px; margin: 0 auto;">
+                    <div style="font-size: 3.5rem; margin-bottom: 1rem;">🔒</div>
+                    <h2 style="color: #1e293b; font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem;">
+                        Sesión de Salida Inactiva
+                    </h2>
+                    <p style="color: #64748b; font-size: 0.95rem; margin-bottom: 2rem;">
+                        No hay una sesión de salida abierta para este evento. Inicia una nueva sesión para generar el código QR colectivo temporal.
+                    </p>
+                    <form method="post" action="{% url 'asistencia:iniciar_sesion_salida' evento.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'asistencia:proyector_salida' evento.pk %}">
+                        <button type="submit" class="btn btn-primary btn-lg" style="padding: 0.85rem 2rem; font-weight: 700; border-radius: 8px;">
+                            ▶️ Iniciar Sesión de Salida
+                        </button>
+                    </form>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if salidas_habilitadas %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let timeLeft = 30;
+    const contadorEl = document.getElementById('contadorRotacion');
+    const barraEl = document.getElementById('barraProgreso');
+    const qrImg = document.getElementById('qrSalidaImg');
+
+    function actualizarTemporizador() {
+        timeLeft--;
+        if (timeLeft <= 0) {
+            timeLeft = 30;
+            rotarQR();
+        }
+        if (contadorEl) contadorEl.textContent = timeLeft;
+        if (barraEl) {
+            const pct = (timeLeft / 30) * 100;
+            barraEl.style.width = pct + '%';
+        }
+    }
+
+    function rotarQR() {
+        fetch("{% url 'asistencia:rotar_nonce_salida' evento.pk %}", {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.exito && data.qr_base64 && qrImg) {
+                qrImg.src = "data:image/png;base64," + data.qr_base64;
+            }
+        })
+        .catch(err => console.error("Error al rotar QR de salida:", err));
+    }
+
+    setInterval(actualizarTemporizador, 1000);
+});
+</script>
+{% endif %}
+{% endblock %}
+

@@ -1,0 +1,409 @@
+{% extends 'base.html' %}
+
+{% block title %}Pase Digital | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav no-print">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    {% if request.user.is_authenticated %}
+        <a href="{% url 'participantes:mis_inscripciones' %}">Mis Inscripciones</a>
+        <span class="sep">/</span>
+    {% else %}
+        <a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre|truncatewords:4 }}</a>
+        <span class="sep">/</span>
+    {% endif %}
+    <span class="current">Pase Digital de Entrada</span>
+</div>
+
+<div class="ticket-wrapper">
+    <div class="digital-ticket">
+        <!-- Encabezado del Pase -->
+        <div class="ticket-header">
+            <div class="ticket-brand">
+                <span class="brand-badge">UNIMINUTO</span>
+                <span class="ticket-title-tag">PASE DIGITAL DE ASISTENCIA</span>
+            </div>
+            <div class="ticket-event-category">
+                <span class="badge badge-category">{{ evento.categoria.nombre }}</span>
+                <span class="badge {% if evento.modalidad == 'PRESENCIAL' %}badge-presencial{% elif evento.modalidad == 'VIRTUAL' %}badge-virtual{% else %}badge-hibrida{% endif %}">
+                    {{ evento.get_modalidad_display }}
+                </span>
+            </div>
+        </div>
+
+        <!-- Cuerpo del Pase -->
+        <div class="ticket-body">
+            <h2 class="ticket-event-name">{{ evento.nombre }}</h2>
+
+            <div class="ticket-grid">
+                <!-- Información del Evento y Participante -->
+                <div class="ticket-info-col">
+                    <div class="ticket-section-title">Datos del Participante</div>
+                    <div class="ticket-data-group">
+                        <div class="ticket-label">Participante</div>
+                        <div class="ticket-value font-highlight">{{ participante.nombres }} {{ participante.apellidos }}</div>
+                    </div>
+                    <div class="ticket-data-group">
+                        <div class="ticket-label">Tipo / Perfil</div>
+                        <div class="ticket-value">
+                            <span class="badge badge-primary">{{ participante.get_tipo_display }}</span>
+                        </div>
+                    </div>
+                    {% if participante.institucion %}
+                    <div class="ticket-data-group">
+                        <div class="ticket-label">Institución / Dependencia</div>
+                        <div class="ticket-value">{{ participante.institucion }}</div>
+                    </div>
+                    {% endif %}
+
+                    <div class="ticket-divider"></div>
+
+                    <div class="ticket-section-title">Logística del Evento</div>
+                    <div class="ticket-data-group">
+                        <div class="ticket-label">Fecha</div>
+                        <div class="ticket-value">📅 {{ evento.fecha|date:"l, d \d\e F \d\e Y" }}</div>
+                    </div>
+                    <div class="ticket-data-group">
+                        <div class="ticket-label">Horario</div>
+                        <div class="ticket-value">⏰ {{ evento.hora_inicio|time:"H:i" }} a {{ evento.hora_fin|time:"H:i" }}</div>
+                    </div>
+                    <div class="ticket-data-group">
+                        <div class="ticket-label">Lugar / Sede</div>
+                        <div class="ticket-value">📍 {{ evento.lugar }}</div>
+                    </div>
+                </div>
+
+                <!-- Código QR de Asistencia -->
+                <div class="ticket-qr-col">
+                    <div class="qr-card">
+                        <div class="qr-container">
+                            <img src="data:image/png;base64,{{ qr_base64 }}" alt="Código QR de Asistencia" class="qr-image" id="qrCodeImg">
+                        </div>
+                        <div class="qr-caption">
+                            <span class="qr-id-text">Inscripción #{{ inscripcion.pk }}</span>
+                            <div class="qr-status-indicator" style="display: flex; flex-direction: column; gap: 0.35rem; align-items: center; margin-top: 0.4rem;">
+                                {% if inscripcion.estado == 'ACTIVA' %}
+                                    {% if llegada_registrada %}
+                                        <span class="badge badge-success" id="badgeLlegada">✓ Llegada: {{ asistencia.hora_entrada|time:"H:i" }}</span>
+                                    {% else %}
+                                        <span class="badge badge-warning" id="badgeLlegada" style="background: #eab308; color: #000;">⏳ Llegada Pendiente</span>
+                                    {% endif %}
+
+                                    {% if salida_registrada %}
+                                        <span class="badge badge-success" id="badgeSalida">✓ Salida: {{ asistencia.hora_salida|time:"H:i" }} ({{ asistencia.minutos_permanencia }}m)</span>
+                                    {% elif salidas_habilitadas and llegada_registrada %}
+                                        <span class="badge badge-info" id="badgeSalida" style="background: #0284c7; color: #fff;">🚪 Salidas Habilitadas</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="badge badge-danger">✕ Inscripción Cancelada</span>
+                                {% endif %}
+                            </div>
+
+                            {% if inscripcion.estado == 'ACTIVA' and not salida_registrada %}
+                            <!-- Barra de rotación dinámica 30 segundos -->
+                            <div class="dynamic-qr-box no-print" style="margin-top: 0.8rem; width: 100%; max-width: 220px;">
+                                <div style="background: #e2e8f0; height: 4px; border-radius: 4px; overflow: hidden; width: 100%;">
+                                    <div id="qrProgressBar" style="background: #2563eb; width: 100%; height: 100%; transition: width 1s linear;"></div>
+                                </div>
+                                <span style="font-size: 0.72rem; color: #64748b; margin-top: 0.3rem; display: block;">
+                                    🔒 Dinámico (renovación en <strong id="qrCountdownText">30</strong>s)
+                                </span>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <p class="qr-hint">Presenta este código en pantalla o impreso al ingresar al evento.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instrucciones y Pie del Pase -->
+        <div class="ticket-footer">
+            <div class="ticket-terms">
+                <p><strong>Instrucciones importantes:</strong></p>
+                <ul>
+                    <li>Este código QR es de uso personal e intransferible para el registro de tu asistencia.</li>
+                    <li>Por seguridad, el código se renueva automáticamente cada 30 segundos protegiendo tu identidad.</li>
+                    <li>Llega al menos 15 minutos antes de la hora programada para facilitar el control de acceso.</li>
+                </ul>
+            </div>
+            
+            <div class="ticket-actions no-print">
+                {% if not request.user.is_authenticated %}
+                    <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary btn-icon" style="background: transparent; color: #0f2b46; border: 1px solid #cbd5e1;">
+                        ← Volver al Evento
+                    </a>
+                {% endif %}
+                {% if salidas_habilitadas and llegada_registrada and not salida_registrada %}
+                    <a href="{% url 'asistencia:escanear_salida' evento.pk %}" class="btn btn-warning btn-icon" style="background: #eab308; color: #000; font-weight: 700; border: none;">
+                        🚪 Escanear QR de Salida
+                    </a>
+                {% endif %}
+                <a href="{% url 'asistencia:qr_imagen' inscripcion.pk %}{% if request.GET.token %}?token={{ request.GET.token }}{% endif %}" class="btn btn-secondary btn-icon" download>
+                    📥 Descargar Imagen QR (PNG)
+                </a>
+                <button type="button" onclick="window.print();" class="btn btn-primary btn-icon">
+                    🖨️ Imprimir Pase
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+{% if inscripcion.estado == 'ACTIVA' and not salida_registrada %}
+(function() {
+    let timeLeft = 30;
+    const totalTime = 30;
+    const countdownEl = document.getElementById('qrCountdownText');
+    const progressBar = document.getElementById('qrProgressBar');
+    const qrImg = document.getElementById('qrCodeImg');
+
+    const interval = setInterval(async () => {
+        timeLeft--;
+        if (countdownEl) countdownEl.innerText = timeLeft;
+        if (progressBar) {
+            const pct = Math.max(0, (timeLeft / totalTime) * 100);
+            progressBar.style.width = pct + '%';
+        }
+
+        if (timeLeft <= 0) {
+            timeLeft = totalTime;
+            if (progressBar) progressBar.style.width = '100%';
+            await fetchNuevoQR();
+        }
+    }, 1000);
+
+    async function fetchNuevoQR() {
+        try {
+            let url = "{% url 'asistencia:qr_dinamico' inscripcion.pk %}";
+            {% if request.GET.token %}
+                url += "?token={{ request.GET.token }}";
+            {% endif %}
+            const res = await fetch(url, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const data = await res.json();
+            if (data.exito && data.qr_base64 && qrImg) {
+                qrImg.src = "data:image/png;base64," + data.qr_base64;
+            }
+            if (data.llegada_registrada) {
+                const bLlegada = document.getElementById('badgeLlegada');
+                if (bLlegada) {
+                    bLlegada.className = 'badge badge-success';
+                    bLlegada.innerText = '✓ Llegada Registrada';
+                }
+            }
+            if (data.salida_registrada) {
+                const bSalida = document.getElementById('badgeSalida');
+                if (bSalida) {
+                    bSalida.className = 'badge badge-success';
+                    bSalida.innerText = '✓ Salida Registrada';
+                }
+            }
+        } catch (e) {
+            console.warn('Error renovando QR dinámico:', e);
+        }
+    }
+})();
+{% endif %}
+</script>
+
+<style>
+/* Estilos específicos del Pase Digital */
+.ticket-wrapper {
+    max-width: 860px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+.digital-ticket {
+    background: var(--color-surface, #ffffff);
+    border: 2px solid var(--color-border, #e2e8f0);
+    border-radius: 16px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+    position: relative;
+}
+.ticket-header {
+    background: linear-gradient(135deg, #0f2b46 0%, #1e3a8a 100%);
+    color: #ffffff;
+    padding: 1.5rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+.ticket-brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+.ticket-title-tag {
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #e2e8f0;
+}
+.ticket-body {
+    padding: 2rem;
+}
+.ticket-event-name {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--color-text, #1e293b);
+    margin-bottom: 1.5rem;
+    line-height: 1.3;
+}
+.ticket-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 2rem;
+    align-items: center;
+}
+.ticket-section-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-primary, #0f2b46);
+    margin-bottom: 0.8rem;
+}
+.ticket-data-group {
+    margin-bottom: 0.8rem;
+}
+.ticket-label {
+    font-size: 0.75rem;
+    color: #64748b;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+.ticket-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+.font-highlight {
+    font-size: 1.15rem;
+    color: #0f2b46;
+}
+.ticket-divider {
+    height: 1px;
+    background: #e2e8f0;
+    margin: 1.2rem 0;
+}
+.ticket-qr-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+.qr-card {
+    background: #f8fafc;
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.qr-container {
+    background: #ffffff;
+    padding: 0.5rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+.qr-image {
+    width: 200px;
+    height: 200px;
+    display: block;
+}
+.qr-caption {
+    margin-top: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.qr-id-text {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #64748b;
+}
+.qr-hint {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-top: 0.6rem;
+    max-width: 220px;
+}
+.ticket-footer {
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    padding: 1.5rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+}
+.ticket-terms {
+    font-size: 0.78rem;
+    color: #64748b;
+    max-width: 500px;
+}
+.ticket-terms ul {
+    margin: 0.3rem 0 0 1.2rem;
+    padding: 0;
+}
+.ticket-terms li {
+    margin-bottom: 0.2rem;
+}
+.ticket-actions {
+    display: flex;
+    gap: 0.8rem;
+}
+
+/* Impresión */
+@media print {
+    .no-print, .app-header, .app-footer, .breadcrumb-nav {
+        display: none !important;
+    }
+    body {
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    .ticket-wrapper {
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    .digital-ticket {
+        border: 1px solid #000000 !important;
+        box-shadow: none !important;
+    }
+    .ticket-header {
+        background: #0f2b46 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+
+@media (max-width: 768px) {
+    .ticket-grid {
+        grid-template-columns: 1fr;
+    }
+    .ticket-qr-col {
+        margin-top: 1.5rem;
+    }
+    .ticket-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .ticket-actions {
+        flex-direction: column;
+    }
+}
+</style>
+{% endblock %}

@@ -1,0 +1,15 @@
+SIGAE — UNIMINUTO
+Confirmación de Correo Electrónico
+
+Estimado(a) {{ usuario.get_full_name|default:usuario.username }},
+
+Para garantizar la seguridad de tu cuenta institucional y permitirte responder invitaciones a eventos, por favor confirma que tienes control de esta dirección de correo electrónico ingresando al siguiente enlace seguro:
+
+{{ enlace_verificacion }}
+
+Este enlace de un solo uso tiene una vigencia de 24 horas.
+
+Atentamente,
+Corporación Universitaria Minuto de Dios — UNIMINUTO
+SIGAE Plataforma de Eventos
+

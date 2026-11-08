@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+
+{% block title %}Inscripción Pública | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:catalogo' %}">Catálogo de Eventos</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre|truncatewords:5 }}</a>
+    <span class="sep">/</span>
+    <span class="current">Inscripción Pública</span>
+</div>
+
+<div class="form-page-layout" style="max-width: 720px; margin: 2rem auto;">
+    <div class="form-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        <div class="form-header" style="margin-bottom: 1.5rem; text-align: center;">
+            <span class="badge badge-success" style="font-size: 0.85rem; padding: 0.35rem 0.85rem;">Registro Público</span>
+            <h2 style="color: #002d62; font-size: 1.75rem; font-weight: 700; margin: 0.75rem 0 0.25rem 0;">
+                Inscripción al Evento
+            </h2>
+            <p class="subtitle" style="color: #64748b; font-size: 0.95rem;">
+                Participa en <strong>{{ evento.nombre }}</strong> completando el siguiente formulario.
+            </p>
+        </div>
+
+        <!-- Resumen del Evento -->
+        <div class="event-mini-summary" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.75rem;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; font-size: 0.9rem; color: #334155;">
+                <div>📅 <strong>Fecha:</strong> {{ evento.fecha|date:"d/m/Y" }}</div>
+                <div>⏰ <strong>Horario:</strong> {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</div>
+                <div>📍 <strong>Lugar:</strong> {{ evento.lugar }}</div>
+                <div>🌐 <strong>Modalidad:</strong> {{ evento.get_modalidad_display }}</div>
+                {% if evento.cupo %}
+                    <div>👥 <strong>Cupos disponibles:</strong> {{ cupos_disponibles }} de {{ evento.cupo }}</div>
+                {% else %}
+                    <div>👥 <strong>Cupo:</strong> Ilimitado</div>
+                {% endif %}
+            </div>
+            {% if evento.descripcion %}
+                <p style="margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px dashed #cbd5e1; color: #64748b; font-size: 0.88rem; line-height: 1.5;">
+                    {{ evento.descripcion }}
+                </p>
+            {% endif %}
+        </div>
+
+        {% if esta_lleno %}
+            <div class="alert alert-error" style="background: #fee2e2; border: 1px solid #f87171; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
+                <h3 style="color: #b91c1c; font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;">🚫 Cupo Agotado</h3>
+                <p style="color: #7f1d1d; margin: 0; font-size: 0.92rem;">
+                    Se ha alcanzado la capacidad máxima de asistentes configurada para este evento. No se admiten nuevas inscripciones.
+                </p>
+                <div style="margin-top: 1rem;">
+                    <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">← Volver al Evento</a>
+                </div>
+            </div>
+        {% else %}
+            <form method="post" novalidate class="custom-form">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                    <div class="alert alert-error" style="background: #fee2e2; border: 1px solid #f87171; border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
+                        {% for error in form.non_field_errors %}
+                            <p style="color: #b91c1c; margin: 0;">{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                <!-- Documento de Identidad -->
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label for="{{ form.documento.id_for_label }}" class="form-label" style="font-weight: 600; color: #1e293b;">
+                        {{ form.documento.label }} <span style="color: #dc2626;">*</span>
+                    </label>
+                    {{ form.documento }}
+                    <small class="form-hint" style="color: #64748b; font-size: 0.82rem; display: block; margin-top: 0.25rem;">
+                        Cédula de ciudadanía, cédula de extranjería, tarjeta de identidad o documento oficial.
+                    </small>
+                    {% if form.documento.errors %}
+                        <div class="form-error" style="color: #dc2626; font-size: 0.82rem; margin-top: 0.25rem;">{{ form.documento.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Nombres y Apellidos -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                    <div class="form-group">
+                        <label for="{{ form.nombres.id_for_label }}" class="form-label" style="font-weight: 600; color: #1e293b;">
+                            {{ form.nombres.label }} <span style="color: #dc2626;">*</span>
+                        </label>
+                        {{ form.nombres }}
+                        {% if form.nombres.errors %}
+                            <div class="form-error" style="color: #dc2626; font-size: 0.82rem; margin-top: 0.25rem;">{{ form.nombres.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="form-group">
+                        <label for="{{ form.apellidos.id_for_label }}" class="form-label" style="font-weight: 600; color: #1e293b;">
+                            {{ form.apellidos.label }} <span style="color: #dc2626;">*</span>
+                        </label>
+                        {{ form.apellidos }}
+                        {% if form.apellidos.errors %}
+                            <div class="form-error" style="color: #dc2626; font-size: 0.82rem; margin-top: 0.25rem;">{{ form.apellidos.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Correo y Teléfono -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                    <div class="form-group">
+                        <label for="{{ form.correo.id_for_label }}" class="form-label" style="font-weight: 600; color: #1e293b;">
+                            {{ form.correo.label }} <span style="color: #dc2626;">*</span>
+                        </label>
+                        {{ form.correo }}
+                        <small class="form-hint" style="color: #64748b; font-size: 0.82rem; display: block; margin-top: 0.25rem;">
+                            Enviaremos tu enlace seguro de acceso y confirmación a este correo.
+                        </small>
+                        {% if form.correo.errors %}
+                            <div class="form-error" style="color: #dc2626; font-size: 0.82rem; margin-top: 0.25rem;">{{ form.correo.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="form-group">
+                        <label for="{{ form.telefono.id_for_label }}" class="form-label" style="font-weight: 600; color: #1e293b;">
+                            {{ form.telefono.label }} (Opcional)
+                        </label>
+                        {{ form.telefono }}
+                        {% if form.telefono.errors %}
+                            <div class="form-error" style="color: #dc2626; font-size: 0.82rem; margin-top: 0.25rem;">{{ form.telefono.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Institución de procedencia -->
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label for="{{ form.institucion.id_for_label }}" class="form-label" style="font-weight: 600; color: #1e293b;">
+                        {{ form.institucion.label }} (Opcional)
+                    </label>
+                    {{ form.institucion }}
+                    <small class="form-hint" style="color: #64748b; font-size: 0.82rem; display: block; margin-top: 0.25rem;">
+                        Empresa, universidad, colegio o entidad de procedencia.
+                    </small>
+                    {% if form.institucion.errors %}
+                        <div class="form-error" style="color: #dc2626; font-size: 0.82rem; margin-top: 0.25rem;">{{ form.institucion.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Consentimiento Informado y Habeas Data (RNF-14) -->
+                <div class="form-group consent-box" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 1.15rem; margin-bottom: 1.75rem;">
+                    <div style="display: flex; align-items: flex-start; gap: 0.85rem;">
+                        {{ form.acepta_politica_tratamiento }}
+                        <label for="acepta_politica_tratamiento" class="form-label" style="font-size: 0.88rem; font-weight: normal; margin-bottom: 0; cursor: pointer; line-height: 1.5; color: #334155;">
+                            Autorizo de manera previa, expresa e informada a <strong>UNIMINUTO</strong> para recolectar y tratar mis datos personales de conformidad con la 
+                            <a href="https://www.uniminuto.edu/politica-de-privacidad-y-tratamiento-de-datos" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: underline; font-weight: 600;">
+                                Política de Privacidad y Tratamiento de Datos Personales
+                            </a>
+                            institucional y las disposiciones de la Ley Estatutaria 1581 de 2012. <span style="color: #dc2626;">*</span>
+                        </label>
+                    </div>
+                    {% if form.acepta_politica_tratamiento.errors %}
+                        <div class="form-error" style="margin-top: 0.6rem; color: #dc2626; font-size: 0.84rem; font-weight: 600;">
+                            {{ form.acepta_politica_tratamiento.errors.0 }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- Acciones del Formulario -->
+                <div class="form-footer-actions" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem;">
+                    <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">← Cancelar y Volver</a>
+                    <button type="submit" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 1rem; font-weight: 600;">
+                        ✓ Confirmar mi Inscripción
+                    </button>
+                </div>
+            </form>
+        {% endif %}
+
+        <div class="auth-footer" style="margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid #e2e8f0; text-align: center; font-size: 0.88rem; color: #64748b;">
+            <p style="margin: 0 0 0.4rem 0;">¿Perteneces a la comunidad UNIMINUTO (estudiante, docente o administrativo)?</p>
+            <p style="margin: 0;">
+                <a href="{% url 'usuarios:login' %}?next={% url 'eventos:detalle' evento.pk %}" style="color: #0284c7; font-weight: 600; text-decoration: underline;">
+                    Inicia sesión con tu cuenta institucional para inscribirte con 1 clic
+                </a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

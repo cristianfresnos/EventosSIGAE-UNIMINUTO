@@ -1,0 +1,151 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SIGAE - UNIMINUTO{% endblock %}</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Estilos Principales -->
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-container">
+            <a href="{% url 'inicio' %}" class="brand-link">
+                <div class="brand">
+                    <span class="brand-badge">UNIMINUTO</span>
+                    <h1 class="brand-title">SIGAE <span>Eventos</span></h1>
+                </div>
+            </a>
+            <nav class="nav-menu">
+                <a href="{% url 'inicio' %}" class="nav-link">Inicio</a>
+                <a href="{% url 'eventos:catalogo' %}" class="nav-link">Catálogo</a>
+
+                {% if user.is_authenticated %}
+                    <a href="{% url 'participantes:mis_inscripciones' %}" class="nav-link">Mis Inscripciones</a>
+                    {% if user.is_staff or user.is_superuser or user.rol.nombre in 'Administrador,Coordinador,Docente' or user.eventos_organizados.exists %}
+                        <a href="{% url 'eventos:mis_eventos' %}" class="nav-link">Gestión de Eventos</a>
+                        <a href="{% url 'analitica:dashboard' %}" class="nav-link">Dashboard Analítico</a>
+                    {% endif %}
+                    {% if user.is_staff or user.is_superuser or user.rol.nombre == 'Administrador' %}
+                        <a href="{% url 'auditoria:consulta_auditoria' %}" class="nav-link">Auditoría</a>
+                    {% endif %}
+                    <div class="user-chip">
+                        <span class="user-chip-name">{{ user.get_full_name|default:user.username }}</span>
+                        {% if user.rol %}
+                            <span class="user-chip-role">{{ user.rol.nombre }}</span>
+                        {% endif %}
+                    </div>
+                    <a href="{% url 'usuarios:logout' %}" class="nav-link nav-link-logout">Cerrar Sesión</a>
+                {% else %}
+                    <a href="{% url 'usuarios:login' %}" class="nav-link nav-link-login">Iniciar Sesión</a>
+                {% endif %}
+
+                <a href="/admin/" class="nav-link btn-admin" target="_blank" rel="noopener">Administración</a>
+            </nav>
+        </div>
+    </header>
+
+    {% if messages %}
+    <div class="messages-container">
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags|default:'info' }}">
+                <span class="alert-icon">
+                    {% if message.tags == 'success' %}✓
+                    {% elif message.tags == 'error' %}✕
+                    {% elif message.tags == 'warning' %}⚠
+                    {% else %}ℹ{% endif %}
+                </span>
+                <span class="alert-text">{{ message }}</span>
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <main class="main-content">
+        <div class="content-container">
+            {% block content %}
+            <section class="hero-section">
+                <div class="hero-badge">Plataforma Institucional</div>
+                <h2>Sistema Integrado de Gestión de Asistencia y Eventos</h2>
+                <p>Plataforma para el registro, control de asistencia en tiempo real, gestión de participantes y analítica de impacto para eventos institucionales UNIMINUTO.</p>
+                <div class="hero-actions">
+                    <a href="{% url 'eventos:catalogo' %}" class="btn btn-primary">Explorar Catálogo de Eventos</a>
+                    {% if not user.is_authenticated %}
+                        <a href="{% url 'usuarios:login' %}" class="btn btn-secondary">Iniciar Sesión Institucional</a>
+                    {% else %}
+                        <a href="{% url 'participantes:mis_inscripciones' %}" class="btn btn-secondary">Ver Mis Inscripciones</a>
+                    {% endif %}
+                </div>
+            </section>
+
+            <section class="modules-grid">
+                <a href="{% url 'eventos:catalogo' %}" class="module-card-link">
+                    <div class="module-card">
+                        <div class="module-icon">📅</div>
+                        <h3>Catálogo de Eventos</h3>
+                        <p>Consulta conferencias, talleres y seminarios con fechas, horarios, modalidades y cupos disponibles.</p>
+                    </div>
+                </a>
+                <a href="{% if user.is_authenticated %}{% url 'participantes:mis_inscripciones' %}{% else %}{% url 'usuarios:login' %}{% endif %}" class="module-card-link">
+                    <div class="module-card">
+                        <div class="module-icon">👥</div>
+                        <h3>Mis Inscripciones</h3>
+                        <p>Gestiona tu participación en eventos institucionales y consulta tu estado de registro.</p>
+                    </div>
+                </a>
+                <div class="module-card">
+                    <div class="module-icon">📲</div>
+                    <h3>Control de Asistencia</h3>
+                    <p>Verificación ágil mediante listas oficiales, firmas y validación presencial.</p>
+                </div>
+                <a href="{% if user.is_authenticated %}{% url 'analitica:dashboard' %}{% else %}{% url 'usuarios:login' %}?next={% url 'analitica:dashboard' %}{% endif %}" class="module-card-link">
+                    <div class="module-card">
+                        <div class="module-icon">📊</div>
+                        <h3>Analítica y Métricas</h3>
+                        <p>Indicadores de asistencia efectiva, impacto y consolidación institucional.</p>
+                    </div>
+                </a>
+                <div class="module-card">
+                    <div class="module-icon">📄</div>
+                    <h3>Reportes y Planillas</h3>
+                    <p>Generación y descarga de planillas de asistencia imprimibles y reportes gerenciales en PDF.</p>
+                </div>
+                {% if user.is_staff or user.is_superuser or user.rol.nombre == 'Administrador' %}
+                <a href="{% url 'auditoria:consulta_auditoria' %}" class="module-card-link">
+                    <div class="module-card">
+                        <div class="module-icon">🛡️</div>
+                        <h3>Auditoría y Trazabilidad</h3>
+                        <p>Bitácora inmutable de seguridad, trazabilidad de operaciones y consulta de registros.</p>
+                    </div>
+                </a>
+                {% else %}
+                <div class="module-card">
+                    <div class="module-icon">🛡️</div>
+                    <h3>Auditoría y Trazabilidad</h3>
+                    <p>Registro de seguridad, trazabilidad de operaciones y bitácora de transacciones.</p>
+                </div>
+                {% endif %}
+            </section>
+            {% endblock %}
+        </div>
+    </main>
+
+    <footer class="app-footer">
+        <div class="footer-container">
+            <p>&copy; 2026 Corporación Universitaria Minuto de Dios - UNIMINUTO. Todos los derechos reservados.</p>
+            <p class="footer-sub">SIGAE — Sistema Integrado de Gestión de Asistencia y Eventos</p>
+        </div>
+    </footer>
+
+    <script src="{% static 'js/main.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

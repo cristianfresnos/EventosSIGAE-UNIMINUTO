@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+
+{% block title %}Inscripción Externa | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:catalogo' %}">Catálogo de Eventos</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre|truncatewords:5 }}</a>
+    <span class="sep">/</span>
+    <span class="current">Registro Externo</span>
+</div>
+
+<div class="form-page-layout">
+    <div class="form-card">
+        <div class="form-header">
+            <span class="badge badge-warning">Participante Externo</span>
+            <h2>Formulario de Inscripción al Evento</h2>
+            <p class="subtitle">Regístrate para participar en <strong>{{ evento.nombre }}</strong>.</p>
+        </div>
+
+        <div class="event-mini-summary">
+            <div class="mini-item">📅 {{ evento.fecha|date:"d/m/Y" }} | {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</div>
+            <div class="mini-item">📍 {{ evento.lugar }}</div>
+            <div class="mini-item">🌐 Modalidad: {{ evento.get_modalidad_display }}</div>
+        </div>
+
+        <form method="post" novalidate class="custom-form">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-error">
+                    {% for error in form.non_field_errors %}
+                        <p>{{ error }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <div class="form-group">
+                <label for="{{ form.documento.id_for_label }}" class="form-label">{{ form.documento.label }} *</label>
+                {{ form.documento }}
+                <small class="form-hint">Cédula de ciudadanía, extranjería o documento oficial de identidad.</small>
+                {% if form.documento.errors %}<div class="form-error">{{ form.documento.errors.0 }}</div>{% endif %}
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label for="{{ form.nombres.id_for_label }}" class="form-label">{{ form.nombres.label }} *</label>
+                    {{ form.nombres }}
+                    {% if form.nombres.errors %}<div class="form-error">{{ form.nombres.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.apellidos.id_for_label }}" class="form-label">{{ form.apellidos.label }} *</label>
+                    {{ form.apellidos }}
+                    {% if form.apellidos.errors %}<div class="form-error">{{ form.apellidos.errors.0 }}</div>{% endif %}
+                </div>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label for="{{ form.correo.id_for_label }}" class="form-label">{{ form.correo.label }} *</label>
+                    {{ form.correo }}
+                    <small class="form-hint">Te enviaremos la confirmación a este correo.</small>
+                    {% if form.correo.errors %}<div class="form-error">{{ form.correo.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.telefono.id_for_label }}" class="form-label">{{ form.telefono.label }}</label>
+                    {{ form.telefono }}
+                    {% if form.telefono.errors %}<div class="form-error">{{ form.telefono.errors.0 }}</div>{% endif %}
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="{{ form.institucion.id_for_label }}" class="form-label">{{ form.institucion.label }} *</label>
+                {{ form.institucion }}
+                <small class="form-hint">Empresa, universidad o entidad a la que perteneces.</small>
+                {% if form.institucion.errors %}<div class="form-error">{{ form.institucion.errors.0 }}</div>{% endif %}
+            </div>
+
+            <!-- Consentimiento Informado y Habeas Data (RNF-14) -->
+            <div class="form-group consent-box" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 1rem; margin-top: 1.2rem;">
+                <div style="display: flex; align-items: flex-start; gap: 0.8rem;">
+                    {{ form.acepta_politica_tratamiento }}
+                    <label for="acepta_politica_tratamiento" class="form-label" style="font-size: 0.88rem; font-weight: normal; margin-bottom: 0; cursor: pointer; line-height: 1.45;">
+                        Autorizo de manera previa, expresa e informada a <strong>UNIMINUTO</strong> para recolectar y tratar mis datos personales de conformidad con la 
+                        <a href="https://www.uniminuto.edu/politica-de-privacidad-y-tratamiento-de-datos" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: underline; font-weight: 600;">
+                            Política de Privacidad y Tratamiento de Datos Personales
+                        </a>
+                        institucional y las disposiciones de la Ley Estatutaria 1581 de 2012. <span style="color: #ef4444;">*</span>
+                    </label>
+                </div>
+                {% if form.acepta_politica_tratamiento.errors %}
+                    <div class="form-error" style="margin-top: 0.5rem; color: #dc2626; font-size: 0.82rem; font-weight: 600;">
+                        {{ form.acepta_politica_tratamiento.errors.0 }}
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="form-footer-actions">
+                <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">Cancelar</a>
+                <button type="submit" class="btn btn-primary">Confirmar mi Inscripción</button>
+            </div>
+        </form>
+
+        <div class="auth-footer">
+            <p>¿Perteneces a la comunidad UNIMINUTO (estudiante, docente o administrativo)?</p>
+            <p><a href="{% url 'usuarios:login' %}?next={% url 'eventos:detalle' evento.pk %}">Inicia sesión con tu cuenta institucional para inscribirte con un clic</a></p>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+
+{% block title %}Iniciar Sesión - SIGAE UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="auth-card">
+    <h2>Acceso al Sistema SIGAE</h2>
+    <p class="subtitle">Sistema Institucional de Gestión de Asistencia y Eventos</p>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="btn btn-primary">Ingresar</button>
+    </form>
+</div>
+{% endblock %}

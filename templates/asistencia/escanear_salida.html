@@ -1,0 +1,395 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Escanear Salida | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="breadcrumb-nav">
+    <a href="{% url 'inicio' %}">Inicio</a>
+    <span class="sep">/</span>
+    <a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre|truncatewords:4 }}</a>
+    <span class="sep">/</span>
+    <span class="current">Registro de Salida (Escáner QR)</span>
+</div>
+
+<div class="scanner-page-layout" style="max-width: 680px; margin: 1.5rem auto; padding: 0 1rem;">
+    <!-- Encabezado -->
+    <div style="background: linear-gradient(135deg, #002d62 0%, #004080 100%); color: #ffffff; border-radius: 12px 12px 0 0; padding: 1.5rem; text-align: center;">
+        <span class="badge" style="background: #eab308; color: #000; font-weight: 700; font-size: 0.8rem; margin-bottom: 0.5rem; display: inline-block;">
+            REGISTRO DE SALIDA COLECTIVA
+        </span>
+        <h1 style="font-size: 1.45rem; font-weight: 700; margin: 0.3rem 0; color: #ffffff;">
+            {{ evento.nombre }}
+        </h1>
+        <p style="margin: 0; color: #cbd5e1; font-size: 0.9rem;">
+            Participante: <strong>{{ participante.nombres }} {{ participante.apellidos }}</strong>
+        </p>
+    </div>
+
+    <!-- Cuerpo Principal -->
+    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; padding: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
+        
+        <!-- Estado Actual de Asistencia -->
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; display: flex; justify-content: space-around; flex-wrap: wrap; gap: 0.8rem; text-align: center;">
+            <div>
+                <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Llegada (Check-in)</span>
+                {% if llegada_registrada %}
+                    <span style="color: #16a34a; font-weight: 700; font-size: 0.95rem;">✓ {{ asistencia.hora_entrada|time:"H:i" }}</span>
+                {% else %}
+                    <span style="color: #dc2626; font-weight: 700; font-size: 0.95rem;">✕ No Registrada</span>
+                {% endif %}
+            </div>
+            <div style="border-left: 1px solid #cbd5e1;"></div>
+            <div>
+                <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Salida (Checkout)</span>
+                {% if salida_registrada %}
+                    <span style="color: #16a34a; font-weight: 700; font-size: 0.95rem;" id="txtEstadoSalida">✓ {{ asistencia.hora_salida|time:"H:i" }}</span>
+                {% else %}
+                    <span style="color: #eab308; font-weight: 700; font-size: 0.95rem;" id="txtEstadoSalida">⏳ Pendiente</span>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if salida_registrada %}
+            <!-- Salida Ya Registrada -->
+            <div class="alert-box" style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1.5rem; text-align: center; margin-bottom: 1.5rem;">
+                <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">🎉</span>
+                <h3 style="color: #166534; font-size: 1.25rem; font-weight: 700; margin: 0 0 0.5rem 0;">¡Tu salida ya está confirmada!</h3>
+                <p style="color: #15803d; font-size: 0.95rem; margin: 0 0 1rem 0;">
+                    Hora de salida: <strong>{{ asistencia.hora_salida|time:"H:i" }}</strong><br>
+                    {% if asistencia.minutos_permanencia %}
+                        Tiempo total de permanencia: <strong>{{ asistencia.minutos_permanencia }} minutos</strong>
+                    {% endif %}
+                </p>
+                <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-primary" style="margin-right: 0.5rem;">Volver al Evento</a>
+                {% if request.session.acceso_externo_id %}
+                    <a href="{% url 'participantes:ver_inscripcion_externa' %}" class="btn btn-secondary">Mi Portal Personal</a>
+                {% endif %}
+            </div>
+
+        {% elif not llegada_registrada %}
+            <!-- Llegada No Registrada Previamente -->
+            <div class="alert-box" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1.5rem; text-align: center; margin-bottom: 1.5rem;">
+                <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">⚠️</span>
+                <h3 style="color: #991b1b; font-size: 1.25rem; font-weight: 700; margin: 0 0 0.5rem 0;">Llegada no registrada</h3>
+                <p style="color: #b91c1c; font-size: 0.95rem; margin: 0 0 1.2rem 0;">
+                    Para registrar tu salida es obligatorio que primero hayas acreditado tu ingreso con el operador del evento presentando tu código QR personal.
+                </p>
+                {% if request.user.is_authenticated %}
+                    <a href="{% url 'asistencia:pase_digital' inscripcion.pk %}" class="btn btn-primary">Ver Mi Código QR de Llegada</a>
+                {% elif request.session.acceso_externo_id %}
+                    <a href="{% url 'participantes:ver_inscripcion_externa' %}" class="btn btn-primary">Ver Mi Código QR de Llegada</a>
+                {% endif %}
+            </div>
+
+        {% elif not salidas_habilitadas %}
+            <!-- Salidas No Habilitadas Aún -->
+            <div class="alert-box" style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 1.5rem; text-align: center; margin-bottom: 1.5rem;">
+                <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">🔒</span>
+                <h3 style="color: #92400e; font-size: 1.25rem; font-weight: 700; margin: 0 0 0.5rem 0;">Salidas Colectivas No Habilitadas</h3>
+                <p style="color: #b45309; font-size: 0.95rem; margin: 0 0 1rem 0;">
+                    El organizador o profesor aún no ha iniciado la sesión de salida colectiva para este evento. Espera a que se proyecte el código QR en pantalla.
+                </p>
+                <button type="button" onclick="location.reload();" class="btn btn-secondary">🔄 Actualizar Estado</button>
+            </div>
+
+        {% else %}
+            <!-- Contenedor del Escáner Activo -->
+            <div id="scannerSection">
+                <div style="text-align: center; margin-bottom: 1rem;">
+                    <p style="margin: 0; font-size: 0.92rem; color: #475569;">
+                        Apunta tu cámara hacia el <strong>Código QR Colectivo</strong> proyectado en la pantalla del profesor.
+                    </p>
+                </div>
+
+                <!-- Visor de Cámara con Marco -->
+                <div class="scanner-viewport-wrapper" style="position: relative; width: 100%; max-width: 420px; height: 320px; margin: 0 auto; background: #000; border-radius: 12px; overflow: hidden; box-shadow: 0 6px 16px rgba(0,0,0,0.15);">
+                    <video id="scannerVideo" playsinline autoplay muted style="width: 100%; height: 100%; object-fit: cover;"></video>
+                    <canvas id="scannerCanvas" style="display: none;"></canvas>
+
+                    <!-- Marco de enfoque -->
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 3px solid #22c55e; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45); pointer-events: none;">
+                        <div style="position: absolute; top: -1px; left: -1px; width: 24px; height: 24px; border-top: 4px solid #ffffff; border-left: 4px solid #ffffff;"></div>
+                        <div style="position: absolute; top: -1px; right: -1px; width: 24px; height: 24px; border-top: 4px solid #ffffff; border-right: 4px solid #ffffff;"></div>
+                        <div style="position: absolute; bottom: -1px; left: -1px; width: 24px; height: 24px; border-bottom: 4px solid #ffffff; border-left: 4px solid #ffffff;"></div>
+                        <div style="position: absolute; bottom: -1px; right: -1px; width: 24px; height: 24px; border-bottom: 4px solid #ffffff; border-right: 4px solid #ffffff;"></div>
+                    </div>
+
+                    <!-- Indicador flotante de estado -->
+                    <div id="scannerStatusBadge" style="position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.75); color: #ffffff; padding: 0.35rem 0.8rem; border-radius: 20px; font-size: 0.78rem; font-weight: 500; white-space: nowrap;">
+                        Buscando código QR...
+                    </div>
+                </div>
+
+                <!-- Controles de Cámara -->
+                <div style="display: flex; justify-content: center; gap: 0.8rem; margin-top: 1rem;">
+                    <button type="button" id="btnSwitchCamera" onclick="switchCamera()" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                        🔄 Cambiar Cámara
+                    </button>
+                    <button type="button" id="btnToggleManual" onclick="toggleManualInput()" class="btn btn-outline-secondary btn-sm">
+                        ⌨️ Ingreso Manual
+                    </button>
+                </div>
+
+                <!-- Formulario de Respaldo Manual -->
+                <div id="manualInputContainer" style="display: none; margin-top: 1.2rem; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 1rem;">
+                    <label for="manualTokenInput" style="font-size: 0.85rem; font-weight: 600; color: #334155; display: block; margin-bottom: 0.4rem;">
+                        Código o enlace de salida proyectado:
+                    </label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="text" id="manualTokenInput" placeholder="Pega el enlace o token del QR" class="form-control" style="font-size: 0.88rem; flex: 1;">
+                        <button type="button" onclick="submitManualToken()" class="btn btn-primary btn-sm">
+                            Registrar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Mensajes de Alerta Dinámicos -->
+                <div id="liveFeedbackAlert" style="display: none; margin-top: 1.2rem; padding: 1rem; border-radius: 8px; font-size: 0.92rem; text-align: center;"></div>
+            </div>
+
+            <!-- Panel de Éxito Inmediato (Oculto inicialmente) -->
+            <div id="successPanel" style="display: none; background: #f0fdf4; border: 2px solid #86efac; border-radius: 12px; padding: 2rem; text-align: center;">
+                <div style="width: 60px; height: 60px; line-height: 60px; border-radius: 50%; background: #22c55e; color: #ffffff; font-size: 2rem; margin: 0 auto 1rem auto; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.3);">
+                    ✓
+                </div>
+                <h2 style="color: #166534; font-size: 1.4rem; font-weight: 700; margin: 0 0 0.5rem 0;">
+                    ¡Salida Registrada Exitosamente!
+                </h2>
+                <p id="successMessage" style="color: #15803d; font-size: 1rem; margin: 0 0 1rem 0;"></p>
+                
+                <div style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; display: inline-block; min-width: 260px;">
+                    <div style="font-size: 0.82rem; color: #64748b; text-transform: uppercase;">Hora de Salida Registrada</div>
+                    <div id="successTime" style="font-size: 1.35rem; font-weight: 800; color: #166534; margin: 0.2rem 0;"></div>
+                    <div id="successPermanencia" style="font-size: 0.9rem; font-weight: 600; color: #0284c7;"></div>
+                </div>
+
+                <div>
+                    <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-primary" style="margin-right: 0.5rem;">Volver al Evento</a>
+                    {% if request.session.acceso_externo_id %}
+                        <a href="{% url 'participantes:ver_inscripcion_externa' %}" class="btn btn-secondary">Mi Portal Personal</a>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+
+        <!-- Pie y Ayuda -->
+        <div style="border-top: 1px solid #e2e8f0; margin-top: 1.5rem; padding-top: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;">
+            <a href="{% url 'eventos:detalle' evento.pk %}" style="color: #64748b; font-size: 0.85rem; text-decoration: none;">
+                ← Regresar al evento
+            </a>
+            <span style="font-size: 0.78rem; color: #94a3b8;">
+                Control de Asistencia Seguro — SIGAE UNIMINUTO
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- Biblioteca jsQR offline universal -->
+<script src="{% static 'js/jsQR.min.js' %}"></script>
+
+<script>
+let currentStream = null;
+let currentFacingMode = 'environment';
+let isProcessing = false;
+let animationFrameId = null;
+
+const video = document.getElementById('scannerVideo');
+const canvas = document.getElementById('scannerCanvas');
+const statusBadge = document.getElementById('scannerStatusBadge');
+const feedbackAlert = document.getElementById('liveFeedbackAlert');
+
+{% if salidas_habilitadas and llegada_registrada and not salida_registrada %}
+document.addEventListener('DOMContentLoaded', function() {
+    startCamera();
+});
+{% endif %}
+
+async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showFeedback('error', 'Tu navegador o dispositivo no soporta acceso a la cámara. Utiliza el ingreso manual.');
+        document.getElementById('manualInputContainer').style.display = 'block';
+        return;
+    }
+
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+    }
+
+    try {
+        const constraints = {
+            video: {
+                facingMode: currentFacingMode,
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            }
+        };
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+        video.setAttribute('playsinline', true);
+        video.play();
+        requestAnimationFrame(tick);
+        if (statusBadge) statusBadge.innerText = 'Buscando código QR de salida...';
+    } catch (err) {
+        console.warn('Error accediendo a cámara:', err);
+        // Fallback a cualquier cámara disponible
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = currentStream;
+            video.setAttribute('playsinline', true);
+            video.play();
+            requestAnimationFrame(tick);
+            if (statusBadge) statusBadge.innerText = 'Buscando código QR de salida...';
+        } catch (fallbackErr) {
+            showFeedback('error', 'No fue posible acceder a la cámara. Asegúrate de otorgar permisos de cámara en tu navegador.');
+            document.getElementById('manualInputContainer').style.display = 'block';
+        }
+    }
+}
+
+function switchCamera() {
+    currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+    startCamera();
+}
+
+function toggleManualInput() {
+    const el = document.getElementById('manualInputContainer');
+    el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+}
+
+function tick() {
+    if (isProcessing) return;
+
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        if (!canvas) return;
+        canvas.height = video.videoHeight;
+        canvas.width = video.videoWidth;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        if (typeof jsQR !== 'undefined') {
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: 'dontInvert'
+            });
+
+            if (code && code.data) {
+                const detected = code.data.trim();
+                if (detected.length > 5) {
+                    onQRCodeScanned(detected);
+                    return;
+                }
+            }
+        }
+    }
+    animationFrameId = requestAnimationFrame(tick);
+}
+
+function onQRCodeScanned(scannedText) {
+    if (isProcessing) return;
+    isProcessing = true;
+    if (statusBadge) statusBadge.innerText = '¡Código detectado! Validando...';
+
+    // Vibrar si está soportado
+    if (navigator.vibrate) {
+        navigator.vibrate(100);
+    }
+
+    sendExitRegistration(scannedText);
+}
+
+function submitManualToken() {
+    const input = document.getElementById('manualTokenInput');
+    const val = input.value.trim();
+    if (!val) {
+        showFeedback('error', 'Por favor ingresa o pega el token/código de salida.');
+        return;
+    }
+    isProcessing = true;
+    sendExitRegistration(val);
+}
+
+async function sendExitRegistration(tokenData) {
+    showFeedback('info', 'Registrando tu salida...');
+
+    const postData = new FormData();
+    postData.append('token_salida', tokenData);
+    postData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    try {
+        const response = await fetch("{% url 'asistencia:registrar_salida_participante' evento.pk %}", {
+            method: 'POST',
+            body: postData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.exito || data.codigo === 'SALIDA_YA_REGISTRADA') {
+            // Detener cámara
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+
+            // Mostrar éxito
+            document.getElementById('scannerSection').style.display = 'none';
+            const sPanel = document.getElementById('successPanel');
+            sPanel.style.display = 'block';
+
+            document.getElementById('successMessage').innerText = data.mensaje || 'Tu registro de salida ha sido completado.';
+            document.getElementById('successTime').innerText = data.hora_salida || 'Registrada';
+            if (data.permanencia) {
+                document.getElementById('successPermanencia').innerText = 'Permanencia calculada: ' + data.permanencia;
+            } else {
+                document.getElementById('successPermanencia').innerText = '';
+            }
+
+            const stSalida = document.getElementById('txtEstadoSalida');
+            if (stSalida) {
+                stSalida.innerText = '✓ ' + (data.hora_salida || 'Registrada');
+                stSalida.style.color = '#16a34a';
+            }
+        } else {
+            showFeedback('error', data.mensaje || 'No fue posible registrar la salida. Intenta nuevamente.');
+            // Reanudar escaneo tras breve pausa
+            setTimeout(() => {
+                isProcessing = false;
+                if (statusBadge) statusBadge.innerText = 'Buscando código QR de salida...';
+                requestAnimationFrame(tick);
+            }, 3000);
+        }
+    } catch (err) {
+        showFeedback('error', 'Error de conexión al registrar la salida. Verifica tu red e intenta nuevamente.');
+        setTimeout(() => {
+            isProcessing = false;
+            requestAnimationFrame(tick);
+        }, 3000);
+    }
+}
+
+function showFeedback(type, message) {
+    if (!feedbackAlert) return;
+    feedbackAlert.style.display = 'block';
+    if (type === 'error') {
+        feedbackAlert.style.background = '#fef2f2';
+        feedbackAlert.style.border = '1px solid #fecaca';
+        feedbackAlert.style.color = '#991b1b';
+    } else if (type === 'info') {
+        feedbackAlert.style.background = '#eff6ff';
+        feedbackAlert.style.border = '1px solid #bfdbfe';
+        feedbackAlert.style.color = '#1e40af';
+    } else {
+        feedbackAlert.style.background = '#f0fdf4';
+        feedbackAlert.style.border = '1px solid #bbf7d0';
+        feedbackAlert.style.color = '#166534';
+    }
+    feedbackAlert.innerText = message;
+}
+</script>
+{% endblock %}
+

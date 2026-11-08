@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+
+{% block title %}Catálogo de Eventos | SIGAE — UNIMINUTO{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-title-group">
+        <span class="badge badge-primary">Oferta Institucional</span>
+        <h2>Catálogo de Eventos</h2>
+        <p class="subtitle">Explora los eventos académicos, culturales y formativos organizados por UNIMINUTO.</p>
+    </div>
+    {% if user.is_authenticated and user.is_staff or user.is_superuser or user.rol.nombre in 'Administrador,Coordinador,Docente' %}
+        <div class="header-action">
+            <a href="{% url 'eventos:crear' %}" class="btn btn-primary">+ Crear Nuevo Evento</a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Barra de Filtros y Búsqueda -->
+<section class="filter-section">
+    <form method="get" action="{% url 'eventos:catalogo' %}" class="filter-form">
+        <div class="filter-grid">
+            <div class="filter-field search-field">
+                <label for="q" class="filter-label">Buscar evento</label>
+                <input type="text" name="q" id="q" value="{{ filtro_q }}" class="form-control" placeholder="Buscar por título, temática o lugar...">
+            </div>
+
+            <div class="filter-field">
+                <label for="categoria" class="filter-label">Categoría</label>
+                <select name="categoria" id="categoria" class="form-control select-control">
+                    <option value="">Todas las categorías</option>
+                    {% for cat in categorias %}
+                        <option value="{{ cat.pk }}" {% if filtro_categoria == cat.pk|stringformat:"s" %}selected{% endif %}>{{ cat.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-field">
+                <label for="modalidad" class="filter-label">Modalidad</label>
+                <select name="modalidad" id="modalidad" class="form-control select-control">
+                    <option value="">Todas las modalidades</option>
+                    {% for key, val in modalidades %}
+                        <option value="{{ key }}" {% if filtro_modalidad == key %}selected{% endif %}>{{ val }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-field">
+                <label for="estado" class="filter-label">Estado</label>
+                <select name="estado" id="estado" class="form-control select-control">
+                    {% for key, val in estados %}
+                        <option value="{{ key }}" {% if filtro_estado == key %}selected{% endif %}>{{ val }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-primary btn-sm">Filtrar</button>
+                <a href="{% url 'eventos:catalogo' %}" class="btn btn-secondary btn-sm">Limpiar</a>
+            </div>
+        </div>
+    </form>
+</section>
+
+<!-- Resumen de resultados -->
+<div class="results-meta">
+    <p>Se encontraron <strong>{{ total_resultados }}</strong> evento{{ total_resultados|pluralize }} disponible{{ total_resultados|pluralize }}.</p>
+</div>
+
+<!-- Listado de tarjetas de eventos -->
+{% if eventos %}
+<div class="events-grid">
+    {% for evento in eventos %}
+    <article class="event-card">
+        <div class="event-card-header">
+            <span class="badge badge-category">{{ evento.categoria.nombre }}</span>
+            <span class="badge {% if evento.modalidad == 'PRESENCIAL' %}badge-presencial{% elif evento.modalidad == 'VIRTUAL' %}badge-virtual{% else %}badge-hibrida{% endif %}">
+                {{ evento.get_modalidad_display }}
+            </span>
+            <span class="badge {% if evento.estado == 'PUBLICADO' %}badge-success{% elif evento.estado == 'FINALIZADO' or evento.estado == 'CERRADO' %}badge-dark{% else %}badge-warning{% endif %}">
+                {{ evento.get_estado_display }}
+            </span>
+        </div>
+
+        <div class="event-card-body">
+            <h3 class="event-title"><a href="{% url 'eventos:detalle' evento.pk %}">{{ evento.nombre }}</a></h3>
+            <p class="event-desc">{{ evento.descripcion|truncatewords:25 }}</p>
+
+            <div class="event-details-list">
+                <div class="detail-item">
+                    <span class="icon">📅</span>
+                    <span>{{ evento.fecha|date:"d/m/Y" }} | {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="icon">📍</span>
+                    <span>{{ evento.lugar }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="icon">👤</span>
+                    <span>Organiza: {{ evento.organizador.get_full_name|default:evento.organizador.username }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="event-card-footer">
+            <div class="cupo-info">
+                {% if evento.cupo %}
+                    {% if evento.esta_lleno %}
+                        <span class="cupo-status cupo-lleno">🚫 Cupo Lleno ({{ evento.cupo }}/{{ evento.cupo }})</span>
+                    {% else %}
+                        <span class="cupo-status cupo-disponible">✓ {{ evento.cupos_disponibles }} cupos disponibles de {{ evento.cupo }}</span>
+                    {% endif %}
+                {% else %}
+                    <span class="cupo-status cupo-ilimitado">∞ Cupo Libre / Ilimitado</span>
+                {% endif %}
+            </div>
+
+            <div class="card-action">
+                <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-outline-primary btn-sm">Ver Detalle</a>
+            </div>
+        </div>
+    </article>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon">🔍</div>
+    <h3>No se encontraron eventos disponibles</h3>
+    <p>No existen eventos registrados que coincidan con los criterios de búsqueda o filtro aplicados.</p>
+    <a href="{% url 'eventos:catalogo' %}" class="btn btn-secondary">Ver todos los eventos publicados</a>
+</div>
+{% endif %}
+{% endblock %}
