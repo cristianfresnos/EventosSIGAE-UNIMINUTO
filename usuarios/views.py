@@ -54,7 +54,7 @@ def login_view(request):
         'form': form,
         'next': next_url,
     })
-    response['Referrer-Policy'] = 'no-referrer'
+    response['Referrer-Policy'] = 'same-origin'
     return response
 
 
