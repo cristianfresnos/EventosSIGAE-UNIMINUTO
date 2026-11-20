@@ -1,5 +1,22 @@
 from django.contrib import admin
-from .models import Asistencia, ControlSalidaEvento
+from .models import Asistencia, ControlEntradaEvento, ControlSalidaEvento
+
+
+@admin.register(ControlEntradaEvento)
+class ControlEntradaEventoAdmin(admin.ModelAdmin):
+    list_display = (
+        'evento',
+        'entradas_habilitadas',
+        'sesion_id',
+        'fecha_habilitacion',
+        'habilitado_por',
+        'fecha_cierre',
+        'cerrado_por',
+        'fecha_modificacion',
+    )
+    list_filter = ('entradas_habilitadas', 'fecha_habilitacion')
+    search_fields = ('evento__nombre', 'sesion_id')
+    readonly_fields = ('sesion_id', 'fecha_modificacion')
 
 
 @admin.register(ControlSalidaEvento)

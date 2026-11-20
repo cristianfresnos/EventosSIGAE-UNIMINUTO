@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
 from django.http import HttpResponseRedirect
-from .models import CategoriaEvento, Evento, CalificacionEvento
+from .models import CategoriaEvento, Evento, CalificacionEvento, DocenteEvento
 
 
 @admin.register(CategoriaEvento)
@@ -72,6 +72,15 @@ class EventoAdmin(admin.ModelAdmin):
         evento = queryset.first()
         return HttpResponseRedirect(reverse('reportes:reporte_consolidado_pdf', args=[evento.pk]))
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if not change:
+            from asistencia.models import ControlEntradaEvento
+            ControlEntradaEvento.objects.get_or_create(
+                evento=obj,
+                defaults={'entradas_habilitadas': False},
+            )
+
 
 @admin.register(CalificacionEvento)
 class CalificacionEventoAdmin(admin.ModelAdmin):
@@ -106,3 +115,25 @@ class CalificacionEventoAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         # Solo lectura para preservar la autenticidad de las calificaciones estudiantiles
         return False
+
+
+@admin.register(DocenteEvento)
+class DocenteEventoAdmin(admin.ModelAdmin):
+    list_display = (
+        'id_asignacion',
+        'evento',
+        'docente',
+        'nrc',
+        'activo',
+        'asignado_por',
+        'fecha_asignacion',
+    )
+    list_filter = ('activo', 'evento', 'fecha_asignacion')
+    search_fields = (
+        'evento__nombre',
+        'docente__username',
+        'docente__nombres',
+        'docente__apellidos',
+        'nrc',
+    )
+    ordering = ('-fecha_asignacion',)

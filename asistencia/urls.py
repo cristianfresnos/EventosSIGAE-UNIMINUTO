@@ -12,6 +12,11 @@ urlpatterns = [
     # Panel de control de asistencia para organizadores (Cámara + Búsqueda Manual)
     path('evento/<int:id_evento>/control/', views.control_asistencia, name='control_asistencia'),
 
+    # Gestión de sesión compartida de entradas (check-in) y estado de sesiones del evento
+    path('evento/<int:id_evento>/iniciar-sesion-entrada/', views.iniciar_sesion_entrada, name='iniciar_sesion_entrada'),
+    path('evento/<int:id_evento>/cerrar-sesion-entrada/', views.cerrar_sesion_entrada, name='cerrar_sesion_entrada'),
+    path('evento/<int:id_evento>/estado-sesiones/', views.estado_sesiones_evento, name='estado_sesiones_evento'),
+
     # Gestión de sesión de salidas colectivas del organizador
     path('evento/<int:id_evento>/iniciar-sesion-salida/', views.iniciar_sesion_salida, name='iniciar_sesion_salida'),
     path('evento/<int:id_evento>/cerrar-sesion-salida/', views.cerrar_sesion_salida, name='cerrar_sesion_salida'),

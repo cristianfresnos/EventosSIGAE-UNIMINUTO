@@ -62,6 +62,70 @@
     </div>
 </div>
 
+<!-- Panel Compartido de Sesiones de Entrada y Salida (Evento Compartido entre Docentes Asociados) -->
+<div style="margin-bottom: 1.25rem; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 1rem 1.35rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <strong style="color: #002d62; font-size: 0.95rem;">🔄 Sesiones Compartidas del Evento:</strong>
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.35rem; font-size: 0.84rem;">
+            <span>
+                Entrada:
+                {% if estado_sesiones.entrada_activa %}
+                    <strong style="color: #16a34a;">● Activa</strong>
+                    {% if control_entrada.habilitado_por %}<span style="color: #64748b;">({{ control_entrada.habilitado_por.get_full_name|default:control_entrada.habilitado_por.username }})</span>{% endif %}
+                {% else %}
+                    <strong style="color: #64748b;">○ Inactiva</strong>
+                {% endif %}
+            </span>
+            <span style="color: #cbd5e1;">|</span>
+            <span>
+                Salida:
+                {% if estado_sesiones.salida_activa %}
+                    <strong style="color: #0284c7;">● Activa</strong>
+                    {% if control_salida.habilitado_por %}<span style="color: #64748b;">({{ control_salida.habilitado_por.get_full_name|default:control_salida.habilitado_por.username }})</span>{% endif %}
+                {% else %}
+                    <strong style="color: #64748b;">○ Inactiva</strong>
+                {% endif %}
+            </span>
+        </div>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        {% if estado_sesiones.entrada_activa %}
+            <form method="post" action="{% url 'asistencia:cerrar_sesion_entrada' evento.pk %}" style="margin: 0;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger" style="color: #dc2626; border-color: #fca5a5;">
+                    🛑 Cerrar Sesión de Entrada
+                </button>
+            </form>
+        {% else %}
+            <form method="post" action="{% url 'asistencia:iniciar_sesion_entrada' evento.pk %}" style="margin: 0;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm" style="background: #16a34a; color: #fff; font-weight: 600; border: none;" {% if estado_sesiones.salida_activa %}disabled title="Cierra la sesión de salida primero"{% endif %}>
+                    🟢 Iniciar Sesión de Entrada
+                </button>
+            </form>
+        {% endif %}
+
+        {% if estado_sesiones.salida_activa %}
+            <a href="{% url 'asistencia:proyector_salida' evento.pk %}" target="_blank" class="btn btn-sm btn-primary" style="background: #002d62;">
+                🖥️ Proyector QR Salida
+            </a>
+            <form method="post" action="{% url 'asistencia:cerrar_sesion_salida' evento.pk %}" style="margin: 0;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger" style="color: #dc2626; border-color: #fca5a5;">
+                    🛑 Cerrar Sesión de Salida
+                </button>
+            </form>
+        {% else %}
+            <form method="post" action="{% url 'asistencia:iniciar_sesion_salida' evento.pk %}" style="margin: 0;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-secondary" style="font-weight: 600;" {% if estado_sesiones.entrada_activa %}disabled title="Cierra la sesión de entrada primero"{% endif %}>
+                    🚀 Iniciar Sesión de Salida
+                </button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+
 <!-- Selector de Modo Operativo: Entrada vs Salida -->
 <div class="mode-selector-box" style="margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; background: #ffffff; padding: 1rem 1.5rem; border-radius: 10px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
     <div style="display: flex; align-items: center; gap: 0.8rem;">

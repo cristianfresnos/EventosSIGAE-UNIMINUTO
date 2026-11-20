@@ -2,7 +2,7 @@ import base64
 import json
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.contrib import messages
 from django.db.models import Q
@@ -12,9 +12,14 @@ from django.core import signing
 
 from auditoria.models import Auditoria
 from eventos.models import Evento
+from eventos.permissions import (
+    puede_gestionar_evento,
+    obtener_docentes_asociados_evento,
+    obtener_nrcs_evento,
+)
 from eventos.services import ETIQUETAS_ESTRELLAS, verificar_elegibilidad_calificacion
 from participantes.models import Inscripcion, EstadoInscripcion, AccesoExternoInscripcion
-from .models import Asistencia, MetodoAsistencia, EstadoAsistencia, ControlSalidaEvento
+from .models import Asistencia, MetodoAsistencia, EstadoAsistencia, ControlEntradaEvento, ControlSalidaEvento
 from .services import (
     SALT_QR,
     SALT_SALIDA_EVENTO,
@@ -28,7 +33,11 @@ from .services import (
     generar_imagen_qr_bytes,
     registrar_asistencia_llegada,
     registrar_asistencia_salida,
+    es_entrada_habilitada,
     es_salida_habilitada,
+    obtener_estado_sesiones_evento,
+    iniciar_sesion_entrada_service,
+    cerrar_sesion_entrada_service,
     iniciar_sesion_salida_service,
     cerrar_sesion_salida_service,
     rotar_nonce_salida_service,
@@ -47,16 +56,8 @@ def get_client_ip(request):
 
 
 def tiene_permiso_evento(user, evento):
-    """Determina si un usuario tiene permisos de gestión y asistencia sobre un evento."""
-    if not user.is_authenticated:
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    if hasattr(user, 'rol') and user.rol and user.rol.nombre in ['Administrador', 'Coordinador']:
-        return True
-    if evento.organizador_id == user.id:
-        return True
-    return False
+    """Determina si un usuario tiene permisos de gestión y asistencia sobre un evento (incluidos docentes asociados)."""
+    return puede_gestionar_evento(user, evento)
 
 
 def pase_digital(request, id_inscripcion):
@@ -494,9 +495,14 @@ def control_asistencia(request, id_evento):
     total_sin_salida = max(0, total_asistieron - total_salidas)
     porcentaje = round((total_asistieron / total_inscritos * 100), 1) if total_inscritos > 0 else 0
     permanencia_promedio = calcular_permanencia_promedio(evento)
-    salidas_habilitadas = es_salida_habilitada(evento)
+    estado_sesiones = obtener_estado_sesiones_evento(evento)
+    entradas_habilitadas = estado_sesiones['entradas_permitidas']
+    salidas_habilitadas = estado_sesiones['salidas_permitidas']
     token_salida_evento = generar_token_salida_evento(evento)
     url_salida_evento = construir_url_salida_evento(request, evento)
+    docentes_asociados = list(obtener_docentes_asociados_evento(evento))
+    nrcs_evento = obtener_nrcs_evento(evento)
+    filtro_nrc = request.GET.get('nrc', '').strip()
 
     # Consulta base para la lista tabular
     inscripciones_qs = (
@@ -528,13 +534,18 @@ def control_asistencia(request, id_evento):
             asistencia__hora_salida__isnull=False
         )
 
+    # Aplicar filtro opcional por NRC si se proporcionó
+    if filtro_nrc:
+        inscripciones_qs = inscripciones_qs.filter(nrc=filtro_nrc)
+
     # Aplicar búsqueda textual si se proporcionó
     if q:
         inscripciones_qs = inscripciones_qs.filter(
             Q(participante__nombres__icontains=q) |
             Q(participante__apellidos__icontains=q) |
             Q(participante__documento__icontains=q) |
-            Q(participante__correo__icontains=q)
+            Q(participante__correo__icontains=q) |
+            Q(nrc__icontains=q)
         )
 
     inscripciones = list(inscripciones_qs)
@@ -549,7 +560,14 @@ def control_asistencia(request, id_evento):
         'total_sin_salida': total_sin_salida,
         'porcentaje': porcentaje,
         'permanencia_promedio': permanencia_promedio,
+        'estado_sesiones': estado_sesiones,
+        'control_entrada': estado_sesiones['control_entrada'],
+        'control_salida': estado_sesiones['control_salida'],
+        'entradas_habilitadas': entradas_habilitadas,
         'salidas_habilitadas': salidas_habilitadas,
+        'docentes_asociados': docentes_asociados,
+        'nrcs_evento': nrcs_evento,
+        'filtro_nrc': filtro_nrc,
         'token_salida_evento': token_salida_evento,
         'url_salida_evento': url_salida_evento,
         'filtro_asistencia': filtro_asistencia,
@@ -581,12 +599,20 @@ def toggle_salidas_evento(request, id_evento):
         habilitar_bool = habilitar_param.lower() in ['true', '1', 'si', 'on']
 
     ip_cliente = get_client_ip(request)
-    nuevo_estado = toggle_salidas_evento_service(
-        evento,
-        habilitar=habilitar_bool,
-        operador=request.user,
-        ip=ip_cliente
-    )
+    try:
+        nuevo_estado = toggle_salidas_evento_service(
+            evento,
+            habilitar=habilitar_bool,
+            operador=request.user,
+            ip=ip_cliente
+        )
+    except ValidationError as exc:
+        msg_err = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+        cod_err = getattr(exc, 'code', None) or 'CONFLICTO_SESION'
+        if is_ajax:
+            return JsonResponse({'exito': False, 'codigo': cod_err, 'mensaje': msg_err}, status=409)
+        messages.error(request, msg_err)
+        return redirect('asistencia:control_asistencia', id_evento=evento.pk)
 
     msg = f"Registro de salidas {'habilitado' if nuevo_estado else 'deshabilitado'} exitosamente para este evento."
     if is_ajax:
@@ -849,7 +875,23 @@ def iniciar_sesion_salida(request, id_evento):
         or request.content_type == 'application/json'
     )
     ip_cliente = get_client_ip(request)
-    control = iniciar_sesion_salida_service(evento, operador=request.user, ip=ip_cliente)
+    try:
+        control = iniciar_sesion_salida_service(evento, operador=request.user, ip=ip_cliente)
+    except ValidationError as exc:
+        msg_err = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+        cod_err = getattr(exc, 'code', None) or 'CONFLICTO_SESION_SALIDA'
+        if is_ajax:
+            return JsonResponse({
+                'exito': False,
+                'codigo': cod_err,
+                'mensaje': msg_err,
+                'url_proyector': reverse('asistencia:proyector_salida', kwargs={'id_evento': evento.pk}),
+            }, status=409)
+        messages.warning(request, msg_err)
+        next_url = request.POST.get('next') or request.GET.get('next')
+        if next_url:
+            return redirect(next_url)
+        return redirect('asistencia:control_asistencia', id_evento=evento.pk)
 
     token_salida = generar_token_salida_evento(evento, control=control)
     url_salida = construir_url_salida_evento(request, evento)
@@ -1196,5 +1238,132 @@ def escanear_salida(request, id_evento):
         'llegada_registrada': llegada_registrada,
         'salida_registrada': salida_registrada,
         'salidas_habilitadas': salidas_habilitadas,
+    })
+
+
+@login_required
+def iniciar_sesion_entrada(request, id_evento):
+    """
+    Inicia la sesión compartida de registro de entrada (check-in) del evento.
+    Accesible por cualquier docente asociado, organizador, Coordinador o Administrador.
+    Bloquea sesiones duplicadas y garantiza exclusión mutua frente a sesiones de salida activas.
+    """
+    if request.method != 'POST':
+        messages.error(request, "La activación de la sesión de entrada debe realizarse mediante solicitud POST.")
+        return redirect('asistencia:control_asistencia', id_evento=id_evento)
+
+    evento = get_object_or_404(Evento, pk=id_evento)
+    if not tiene_permiso_evento(request.user, evento):
+        raise PermissionDenied("No tienes autorización para gestionar la sesión de entrada de este evento.")
+
+    is_ajax = (
+        request.headers.get('x-requested-with') == 'XMLHttpRequest'
+        or request.content_type == 'application/json'
+    )
+    ip_cliente = get_client_ip(request)
+
+    try:
+        control = iniciar_sesion_entrada_service(evento, operador=request.user, ip=ip_cliente)
+    except ValidationError as exc:
+        msg_err = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+        cod_err = getattr(exc, 'code', None) or 'CONFLICTO_SESION_ENTRADA'
+        if is_ajax:
+            return JsonResponse({'exito': False, 'codigo': cod_err, 'mensaje': msg_err}, status=409)
+        messages.warning(request, msg_err)
+        next_url = request.POST.get('next') or request.GET.get('next')
+        if next_url:
+            return redirect(next_url)
+        return redirect('asistencia:control_asistencia', id_evento=evento.pk)
+
+    msg = f"Sesión de entrada #{control.sesion_id} iniciada exitosamente. Todos los docentes asociados pueden registrar llegadas."
+    if is_ajax:
+        return JsonResponse({
+            'exito': True,
+            'entradas_habilitadas': True,
+            'sesion_id': control.sesion_id,
+            'habilitado_por': request.user.get_full_name() or request.user.username,
+            'mensaje': msg,
+        })
+
+    messages.success(request, msg)
+    next_url = request.POST.get('next') or request.GET.get('next')
+    if next_url:
+        return redirect(next_url)
+    return redirect('asistencia:control_asistencia', id_evento=evento.pk)
+
+
+@login_required
+def cerrar_sesion_entrada(request, id_evento):
+    """
+    Cierra la sesión compartida de registro de entrada (check-in) del evento.
+    Permite luego iniciar la sesión compartida de salida sin conflictos.
+    """
+    if request.method != 'POST':
+        messages.error(request, "El cierre de la sesión de entrada debe realizarse mediante solicitud POST.")
+        return redirect('asistencia:control_asistencia', id_evento=id_evento)
+
+    evento = get_object_or_404(Evento, pk=id_evento)
+    if not tiene_permiso_evento(request.user, evento):
+        raise PermissionDenied("No tienes autorización para gestionar la sesión de entrada de este evento.")
+
+    is_ajax = (
+        request.headers.get('x-requested-with') == 'XMLHttpRequest'
+        or request.content_type == 'application/json'
+    )
+    ip_cliente = get_client_ip(request)
+    control = cerrar_sesion_entrada_service(evento, operador=request.user, ip=ip_cliente)
+
+    msg = "Sesión de entrada cerrada exitosamente. Ya no se admitirán nuevos registros de entrada."
+    if is_ajax:
+        return JsonResponse({
+            'exito': True,
+            'entradas_habilitadas': False,
+            'sesion_id': control.sesion_id,
+            'cerrado_por': request.user.get_full_name() or request.user.username,
+            'mensaje': msg,
+        })
+
+    messages.warning(request, msg)
+    next_url = request.POST.get('next') or request.GET.get('next')
+    if next_url:
+        return redirect(next_url)
+    return redirect('asistencia:control_asistencia', id_evento=evento.pk)
+
+
+@login_required
+def estado_sesiones_evento(request, id_evento):
+    """
+    Retorna en formato JSON el estado compartido vigente de las sesiones de entrada y salida
+    del evento para consulta sincronizada entre todos los docentes asociados.
+    """
+    evento = get_object_or_404(Evento, pk=id_evento)
+    if not tiene_permiso_evento(request.user, evento):
+        raise PermissionDenied("No tienes autorización para consultar las sesiones de asistencia de este evento.")
+
+    estado = obtener_estado_sesiones_evento(evento)
+    ce = estado['control_entrada']
+    cs = estado['control_salida']
+    return JsonResponse({
+        'exito': True,
+        'evento_id': evento.pk,
+        'sesion_activa_tipo': estado['sesion_activa_tipo'],
+        'entrada': {
+            'activa': estado['entrada_activa'],
+            'permitida': estado['entradas_permitidas'],
+            'sesion_id': ce.sesion_id if ce else None,
+            'habilitado_por': (ce.habilitado_por.get_full_name() or ce.habilitado_por.username) if (ce and ce.habilitado_por) else None,
+            'fecha_habilitacion': ce.fecha_habilitacion.isoformat() if (ce and ce.fecha_habilitacion) else None,
+            'cerrado_por': (ce.cerrado_por.get_full_name() or ce.cerrado_por.username) if (ce and ce.cerrado_por) else None,
+            'fecha_cierre': ce.fecha_cierre.isoformat() if (ce and ce.fecha_cierre) else None,
+        },
+        'salida': {
+            'activa': estado['salida_activa'],
+            'permitida': estado['salidas_permitidas'],
+            'sesion_id': cs.sesion_id if cs else None,
+            'habilitado_por': (cs.habilitado_por.get_full_name() or cs.habilitado_por.username) if (cs and cs.habilitado_por) else None,
+            'fecha_habilitacion': cs.fecha_habilitacion.isoformat() if (cs and cs.fecha_habilitacion) else None,
+            'cerrado_por': (cs.cerrado_por.get_full_name() or cs.cerrado_por.username) if (cs and cs.cerrado_por) else None,
+            'fecha_cierre': cs.fecha_cierre.isoformat() if (cs and cs.fecha_cierre) else None,
+        },
     })
 

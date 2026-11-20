@@ -1,7 +1,7 @@
 import json
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Avg, Count, Q
 from django.http import JsonResponse
 from django.urls import reverse
@@ -9,11 +9,22 @@ from django.contrib import messages
 from django.utils import timezone
 
 from auditoria.models import Auditoria
+from usuarios.models import Usuario
 from participantes.models import Inscripcion, EstadoInscripcion
-from asistencia.models import Asistencia, EstadoAsistencia, ControlSalidaEvento
-from asistencia.services import es_salida_habilitada
-from .models import Evento, CategoriaEvento, ModalidadEvento, EstadoEvento, CalificacionEvento
+from asistencia.models import Asistencia, EstadoAsistencia, ControlEntradaEvento, ControlSalidaEvento
+from asistencia.services import es_salida_habilitada, obtener_estado_sesiones_evento
+from .models import Evento, CategoriaEvento, ModalidadEvento, EstadoEvento, CalificacionEvento, DocenteEvento
 from .forms import EventoForm
+from .permissions import (
+    es_admin_o_coordinador,
+    puede_gestionar_evento,
+    puede_asignar_docentes,
+    obtener_eventos_gestionables,
+    obtener_docentes_asociados_evento,
+    obtener_nrcs_evento,
+    asignar_docente_evento_service,
+    remover_docente_evento_service,
+)
 from .services import (
     ETIQUETAS_ESTRELLAS,
     es_estudiante_elegible_rol,
@@ -133,13 +144,20 @@ def detalle_evento(request, id_evento):
             .first()
         )
 
-    # Verificar permisos de gestión sobre el evento
-    puede_gestionar = False
-    if request.user.is_authenticated:
-        if request.user.is_superuser or request.user.is_staff or evento.organizador_id == request.user.id:
-            puede_gestionar = True
-        elif hasattr(request.user, 'rol') and request.user.rol and request.user.rol.nombre in ['Administrador', 'Coordinador']:
-            puede_gestionar = True
+    # Verificar permisos de gestión sobre el evento (Admin, Coordinador, Organizador o Docente asociado)
+    puede_gestionar = puede_gestionar_evento(request.user, evento)
+    puede_asignar = puede_asignar_docentes(request.user)
+    docentes_asociados = list(obtener_docentes_asociados_evento(evento))
+    nrcs_evento = obtener_nrcs_evento(evento)
+    docentes_disponibles = []
+    if puede_asignar:
+        ids_asociados = [d.docente_id for d in docentes_asociados]
+        docentes_disponibles = list(
+            Usuario.objects
+            .filter(rol__nombre='Docente', is_active=True)
+            .exclude(pk__in=ids_asociados)
+            .order_by('apellidos', 'nombres')
+        )
 
     puede_inscribirse = (
         evento.estado == EstadoEvento.PUBLICADO and
@@ -147,17 +165,18 @@ def detalle_evento(request, id_evento):
         (inscripcion_usuario is None or inscripcion_usuario.estado == EstadoInscripcion.CANCELADA)
     )
 
-    control_salida = None
+    estado_sesiones = obtener_estado_sesiones_evento(evento)
+    control_entrada = estado_sesiones['control_entrada']
+    control_salida = estado_sesiones['control_salida']
+    entradas_habilitadas = estado_sesiones['entradas_permitidas']
+    salidas_habilitadas = estado_sesiones['salidas_permitidas']
     total_llegadas = 0
     total_salidas = 0
-    salidas_habilitadas = False
     asistencia_usuario = None
     llegada_registrada = False
     salida_registrada = False
 
     if puede_gestionar:
-        control_salida = ControlSalidaEvento.objects.filter(evento=evento).first()
-        salidas_habilitadas = es_salida_habilitada(evento)
         total_llegadas = Asistencia.objects.filter(
             inscripcion__evento=evento,
             estado=EstadoAsistencia.REGISTRADA,
@@ -168,8 +187,6 @@ def detalle_evento(request, id_evento):
             estado=EstadoAsistencia.REGISTRADA,
             hora_salida__isnull=False
         ).count()
-    else:
-        salidas_habilitadas = es_salida_habilitada(evento)
 
     if inscripcion_usuario:
         asistencia_usuario = getattr(inscripcion_usuario, 'asistencia', None)
@@ -196,7 +213,14 @@ def detalle_evento(request, id_evento):
         'inscripcion_usuario': inscripcion_usuario,
         'puede_inscribirse': puede_inscribirse,
         'puede_gestionar': puede_gestionar,
+        'puede_asignar_docentes': puede_asignar,
+        'docentes_asociados': docentes_asociados,
+        'docentes_disponibles': docentes_disponibles,
+        'nrcs_evento': nrcs_evento,
+        'estado_sesiones': estado_sesiones,
+        'control_entrada': control_entrada,
         'control_salida': control_salida,
+        'entradas_habilitadas': entradas_habilitadas,
         'total_llegadas': total_llegadas,
         'total_salidas': total_salidas,
         'salidas_habilitadas': salidas_habilitadas,
@@ -213,26 +237,21 @@ def detalle_evento(request, id_evento):
 @login_required
 def mis_eventos(request):
     """
-    Panel de gestión para organizadores y personal institucional.
+    Panel de gestión para organizadores, docentes asociados y personal institucional.
     """
-    if not (es_usuario_gestion(request.user) or Evento.objects.filter(organizador=request.user).exists()):
+    if not (
+        es_usuario_gestion(request.user)
+        or Evento.objects.filter(organizador=request.user).exists()
+        or DocenteEvento.objects.filter(docente=request.user, activo=True).exists()
+    ):
         raise PermissionDenied("No tienes permisos para acceder al panel de gestión de eventos.")
 
-    if request.user.is_superuser or request.user.is_staff or (hasattr(request.user, 'rol') and request.user.rol and request.user.rol.nombre in ['Administrador', 'Coordinador']):
-        eventos_qs = (
-            Evento.objects.select_related('categoria', 'organizador')
-            .annotate(total_activos=Count('inscripciones', filter=Q(inscripciones__estado=EstadoInscripcion.ACTIVA)))
-            .order_by('-fecha', '-hora_inicio')
-        )
-        modo_vista = 'todos'
-    else:
-        eventos_qs = (
-            Evento.objects.filter(organizador=request.user)
-            .select_related('categoria', 'organizador')
-            .annotate(total_activos=Count('inscripciones', filter=Q(inscripciones__estado=EstadoInscripcion.ACTIVA)))
-            .order_by('-fecha', '-hora_inicio')
-        )
-        modo_vista = 'propios'
+    eventos_qs = (
+        obtener_eventos_gestionables(request.user)
+        .annotate(total_activos=Count('inscripciones', filter=Q(inscripciones__estado=EstadoInscripcion.ACTIVA), distinct=True))
+        .order_by('-fecha', '-hora_inicio')
+    )
+    modo_vista = 'todos' if es_admin_o_coordinador(request.user) else 'propios'
 
     eventos = list(eventos_qs)
     if eventos:
@@ -267,6 +286,8 @@ def mis_eventos(request):
 def crear_evento(request):
     """
     Creación de nuevos eventos institucionales por parte de usuarios autorizados.
+    Todo evento nuevo inicializa ControlEntradaEvento en estado inactivo para exigir
+    activación explícita de la sesión de entrada compartida.
     """
     if not es_usuario_gestion(request.user):
         raise PermissionDenied("No cuentas con permisos para crear eventos institucionales.")
@@ -278,11 +299,17 @@ def crear_evento(request):
             evento.organizador = request.user
             evento.save()
 
+            # Todo evento nuevo exige activación explícita de sesión compartida de entrada
+            ControlEntradaEvento.objects.get_or_create(
+                evento=evento,
+                defaults={'entradas_habilitadas': False},
+            )
+
             Auditoria.objects.create(
                 usuario=request.user,
                 accion='CREAR_EVENTO',
                 modulo='EVENTOS',
-                registro_afectado=f"Evento ID {evento.pk} - {evento.nombre}",
+                registro_afectado=f"Evento ID {evento.pk} - {evento.nombre}"[:100],
                 ip=get_client_ip(request)
             )
 
@@ -307,15 +334,11 @@ def crear_evento(request):
 @login_required
 def editar_evento(request, id_evento):
     """
-    Edición de evento existente por su organizador o administradores.
+    Edición de evento existente por su organizador, docentes asociados o administradores/coordinadores.
     """
     evento = get_object_or_404(Evento, pk=id_evento)
 
-    # Control de autorización
-    es_organizador = (evento.organizador_id == request.user.id)
-    es_admin = (request.user.is_superuser or request.user.is_staff or (hasattr(request.user, 'rol') and request.user.rol and request.user.rol.nombre in ['Administrador', 'Coordinador']))
-
-    if not (es_organizador or es_admin):
+    if not puede_gestionar_evento(request.user, evento):
         raise PermissionDenied("No tienes autorización para editar este evento.")
 
     if request.method == 'POST':
@@ -327,7 +350,7 @@ def editar_evento(request, id_evento):
                 usuario=request.user,
                 accion='EDITAR_EVENTO',
                 modulo='EVENTOS',
-                registro_afectado=f"Evento ID {evento_actualizado.pk} - {evento_actualizado.nombre}",
+                registro_afectado=f"Evento ID {evento_actualizado.pk} - {evento_actualizado.nombre}"[:100],
                 ip=get_client_ip(request)
             )
 
@@ -350,7 +373,7 @@ def editar_evento(request, id_evento):
 def cancelar_evento(request, id_evento):
     """
     Cancelación formal de eventos institucionales con justificación y auditoría (RF-05).
-    Autorización exclusiva para el organizador del evento o administradores institucionales.
+    Autorización para organizador, docentes asociados o administradores/coordinadores.
     Preserva las inscripciones existentes en la base de datos para fines históricos y de trazabilidad.
     """
     evento = get_object_or_404(
@@ -358,14 +381,7 @@ def cancelar_evento(request, id_evento):
         pk=id_evento
     )
 
-    es_organizador = (evento.organizador_id == request.user.id)
-    es_admin = (
-        request.user.is_superuser
-        or request.user.is_staff
-        or (hasattr(request.user, 'rol') and request.user.rol and request.user.rol.nombre in ['Administrador', 'Coordinador'])
-    )
-
-    if not (es_organizador or es_admin):
+    if not puede_gestionar_evento(request.user, evento):
         raise PermissionDenied("No tienes autorización para cancelar este evento.")
 
     if evento.estado == EstadoEvento.CANCELADO:
@@ -518,5 +534,87 @@ def calificar_evento(request, id_evento):
         'pendientes_restantes': pendientes_restantes,
         'siguiente_pendiente': siguiente_pendiente,
     })
+
+
+@login_required
+def gestionar_docentes_evento(request, id_evento):
+    """
+    Permite exclusivamente a Administradores y Coordinadores asociar docentes a un evento
+    (con NRC/curso opcional), otorgándoles permisos operativos compartidos sobre el evento.
+    """
+    evento = get_object_or_404(
+        Evento.objects.select_related('categoria', 'organizador'),
+        pk=id_evento
+    )
+
+    if not puede_asignar_docentes(request.user):
+        raise PermissionDenied("Solo Administradores o Coordinadores pueden gestionar los docentes asociados a un evento.")
+
+    if request.method == 'POST':
+        docente_id = request.POST.get('docente_id')
+        nrc = (request.POST.get('nrc') or '').strip() or None
+
+        if not docente_id or not str(docente_id).isdigit():
+            messages.error(request, "Debes seleccionar un docente válido para asociar al evento.")
+            return redirect('eventos:detalle', id_evento=evento.pk)
+
+        docente = get_object_or_404(Usuario.objects.select_related('rol'), pk=int(docente_id))
+        try:
+            asignacion, creada = asignar_docente_evento_service(
+                evento=evento,
+                docente=docente,
+                asignado_por=request.user,
+                nrc=nrc,
+                ip=get_client_ip(request),
+            )
+            if creada:
+                messages.success(
+                    request,
+                    f"El docente {docente.get_full_name() or docente.username} fue asociado exitosamente al evento."
+                )
+            else:
+                messages.info(
+                    request,
+                    f"La asociación del docente {docente.get_full_name() or docente.username} fue actualizada."
+                )
+        except ValidationError as exc:
+            msg_err = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+            messages.error(request, msg_err)
+
+        return redirect('eventos:detalle', id_evento=evento.pk)
+
+    return redirect('eventos:detalle', id_evento=evento.pk)
+
+
+@login_required
+def remover_docente_evento(request, id_evento, id_docente):
+    """
+    Permite exclusivamente a Administradores y Coordinadores desasociar a un docente de un evento.
+    """
+    if request.method != 'POST':
+        messages.error(request, "La desasociación de docentes debe realizarse mediante solicitud POST.")
+        return redirect('eventos:detalle', id_evento=id_evento)
+
+    evento = get_object_or_404(Evento, pk=id_evento)
+    if not puede_asignar_docentes(request.user):
+        raise PermissionDenied("Solo Administradores o Coordinadores pueden desasociar docentes de un evento.")
+
+    docente = get_object_or_404(Usuario, pk=id_docente)
+    removido = remover_docente_evento_service(
+        evento=evento,
+        docente=docente,
+        responsable=request.user,
+        ip=get_client_ip(request),
+    )
+    if removido:
+        messages.warning(
+            request,
+            f"El docente {docente.get_full_name() or docente.username} fue desasociado del evento."
+        )
+    else:
+        messages.info(request, "El docente indicado no tenía una asociación activa con este evento.")
+
+    return redirect('eventos:detalle', id_evento=evento.pk)
+
 
 

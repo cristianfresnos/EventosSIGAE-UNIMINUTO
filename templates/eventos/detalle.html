@@ -245,6 +245,19 @@
                     {% if user.is_authenticated %}
                         <form method="post" action="{% url 'participantes:inscribirse' evento.pk %}">
                             {% csrf_token %}
+                            {% if nrcs_evento %}
+                            <div style="margin-bottom: 0.75rem;">
+                                <label for="selectNrcInscripcion" style="display: block; font-size: 0.82rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem;">
+                                    NRC de tu curso (opcional)
+                                </label>
+                                <select name="nrc" id="selectNrcInscripcion" class="form-control select-control">
+                                    <option value="">— Selecciona tu NRC si aplica —</option>
+                                    {% for nrc_opt in nrcs_evento %}
+                                        <option value="{{ nrc_opt }}">NRC {{ nrc_opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            {% endif %}
                             <button type="submit" class="btn btn-primary btn-block btn-lg">Inscribirme con mi Cuenta</button>
                         </form>
                     {% else %}
@@ -256,11 +269,11 @@
             {% endif %}
         </div>
 
-        <!-- Tarjeta de Gestión (Solo Organizador y Staff) -->
+        <!-- Tarjeta de Gestión (Organizador, Docentes Asociados, Coordinador y Administrador) -->
         {% if puede_gestionar %}
         <div class="action-card management-card">
-            <h3>Panel de Organizador</h3>
-            <p class="card-hint">Acciones reservadas para el responsable del evento:</p>
+            <h3>Panel de Gestión del Evento</h3>
+            <p class="card-hint">Permisos operativos compartidos entre docentes asociados, organizador y coordinación:</p>
             <div class="management-buttons">
                 <a href="{% url 'participantes:gestionar_invitaciones' evento.pk %}" class="btn btn-primary btn-block">✉️ Gestionar Invitaciones</a>
                 <a href="{% url 'asistencia:control_asistencia' evento.pk %}" class="btn btn-secondary btn-block">📱 Control de Asistencia (QR)</a>
@@ -273,53 +286,147 @@
             </div>
         </div>
 
-        <!-- Tarjeta de Salida Colectiva (Etapa 7.3) -->
+        <!-- Tarjeta de Docentes Asociados -->
+        <div class="action-card" style="margin-top: 1.5rem; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.4rem;">
+            <h3 style="color: #002d62; font-size: 1.1rem; font-weight: 700; margin: 0 0 0.6rem 0;">
+                👩‍🏫 Docentes Asociados ({{ docentes_asociados|length }})
+            </h3>
+            <p style="font-size: 0.82rem; color: #64748b; margin: 0 0 0.85rem 0;">
+                Todos los docentes asociados comparten permisos de asistencia, sesiones QR, inscritos y estadísticas.
+            </p>
+            {% if docentes_asociados %}
+                <ul style="list-style: none; padding: 0; margin: 0 0 0.9rem 0; display: flex; flex-direction: column; gap: 0.45rem;">
+                    {% for asig in docentes_asociados %}
+                    <li style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.5rem 0.7rem; font-size: 0.84rem;">
+                        <div>
+                            <strong style="color: #0f2b46;">{{ asig.docente.get_full_name|default:asig.docente.username }}</strong>
+                            {% if asig.nrc %}
+                                <span class="badge" style="background: #eff6ff; color: #1d4ed8; font-size: 0.72rem; margin-left: 0.25rem;">NRC {{ asig.nrc }}</span>
+                            {% endif %}
+                        </div>
+                        {% if puede_asignar_docentes %}
+                        <form method="post" action="{% url 'eventos:remover_docente' evento.pk asig.docente.pk %}" style="margin: 0;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm" style="background: transparent; color: #dc2626; border: 1px solid #fecaca; padding: 0.15rem 0.45rem; font-size: 0.74rem;" title="Desasociar docente">✕</button>
+                        </form>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p style="font-size: 0.84rem; color: #64748b; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 0.65rem; text-align: center; margin-bottom: 0.9rem;">
+                    Aún no hay docentes adicionales asociados a este evento.
+                </p>
+            {% endif %}
+
+            {% if puede_asignar_docentes and docentes_disponibles %}
+            <form method="post" action="{% url 'eventos:gestionar_docentes' evento.pk %}" style="display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px solid #e2e8f0; padding-top: 0.85rem;">
+                {% csrf_token %}
+                <label for="selectDocenteAsociar" style="font-size: 0.8rem; font-weight: 600; color: #334155;">Asociar docente al evento:</label>
+                <select name="docente_id" id="selectDocenteAsociar" class="form-control select-control" required style="font-size: 0.85rem;">
+                    <option value="">— Selecciona un docente —</option>
+                    {% for doc in docentes_disponibles %}
+                        <option value="{{ doc.pk }}">{{ doc.get_full_name|default:doc.username }} ({{ doc.email }})</option>
+                    {% endfor %}
+                </select>
+                <input type="text" name="nrc" maxlength="20" placeholder="NRC / Curso (opcional)" class="form-control" style="font-size: 0.85rem;">
+                <button type="submit" class="btn btn-primary btn-sm btn-block" style="font-weight: 600;">+ Asociar Docente</button>
+            </form>
+            {% endif %}
+        </div>
+
+        <!-- Tarjeta de Sesiones Compartidas de Asistencia (Entrada y Salida QR) -->
         <div class="action-card" style="margin-top: 1.5rem; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
-                <h3 style="color: #002d62; font-size: 1.15rem; font-weight: 700; margin: 0;">
-                    🚪 Salida Colectiva (QR)
+                <h3 style="color: #002d62; font-size: 1.12rem; font-weight: 700; margin: 0;">
+                    🟢 Sesión de Entrada (QR)
                 </h3>
-                {% if salidas_habilitadas %}
+                {% if estado_sesiones.entrada_activa %}
                     <span class="badge" style="background: #16a34a; color: #fff;">Sesión Activa</span>
                 {% else %}
                     <span class="badge" style="background: #64748b; color: #fff;">Inactiva</span>
                 {% endif %}
             </div>
 
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.8rem; margin-bottom: 1rem; display: flex; justify-content: space-around; text-align: center;">
-                <div>
-                    <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Llegadas</span>
-                    <strong style="color: #16a34a; font-size: 1.1rem;">{{ total_llegadas }}</strong>
-                </div>
-                <div style="border-left: 1px solid #cbd5e1;"></div>
-                <div>
-                    <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Salidas</span>
-                    <strong style="color: #0284c7; font-size: 1.1rem;">{{ total_salidas }}</strong>
-                </div>
-            </div>
+            {% if estado_sesiones.entrada_activa and control_entrada.habilitado_por %}
+                <p style="font-size: 0.8rem; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 0.45rem 0.65rem; margin-bottom: 0.8rem;">
+                    Activa por <strong>{{ control_entrada.habilitado_por.get_full_name|default:control_entrada.habilitado_por.username }}</strong>
+                    {% if control_entrada.fecha_habilitacion %}({{ control_entrada.fecha_habilitacion|time:"H:i" }}){% endif %}
+                </p>
+            {% endif %}
 
-            {% if salidas_habilitadas %}
-                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                    <a href="{% url 'asistencia:proyector_salida' evento.pk %}" target="_blank" class="btn btn-primary btn-block" style="background: #0f2b46; color: #fff; text-align: center;">
-                        🖥️ Proyector QR de Salida
-                    </a>
-                    <form method="post" action="{% url 'asistencia:cerrar_sesion_salida' evento.pk %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="next" value="{% url 'eventos:detalle' evento.pk %}">
-                        <button type="submit" class="btn btn-outline-danger btn-block" style="width: 100%; color: #dc2626; border-color: #fca5a5;">
-                            🛑 Cerrar Sesión de Salida
-                        </button>
-                    </form>
-                </div>
-            {% else %}
-                <form method="post" action="{% url 'asistencia:iniciar_sesion_salida' evento.pk %}">
+            {% if estado_sesiones.entrada_activa %}
+                <form method="post" action="{% url 'asistencia:cerrar_sesion_entrada' evento.pk %}" style="margin-bottom: 1.1rem;">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{% url 'eventos:detalle' evento.pk %}">
-                    <button type="submit" class="btn btn-success btn-block" style="width: 100%; background: #16a34a; color: #fff; font-weight: 600;">
-                        🚀 Iniciar Sesión de Salida
+                    <button type="submit" class="btn btn-outline-danger btn-block" style="width: 100%; color: #dc2626; border-color: #fca5a5;">
+                        🛑 Cerrar Sesión de Entrada
+                    </button>
+                </form>
+            {% else %}
+                <form method="post" action="{% url 'asistencia:iniciar_sesion_entrada' evento.pk %}" style="margin-bottom: 1.1rem;">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{% url 'eventos:detalle' evento.pk %}">
+                    <button type="submit" class="btn btn-success btn-block" style="width: 100%; background: #16a34a; color: #fff; font-weight: 600;" {% if estado_sesiones.salida_activa %}disabled title="Cierra primero la sesión de salida activa"{% endif %}>
+                        🟢 Iniciar Sesión de Entrada
                     </button>
                 </form>
             {% endif %}
+
+            <div style="border-top: 1px solid #e2e8f0; padding-top: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
+                    <h3 style="color: #002d62; font-size: 1.12rem; font-weight: 700; margin: 0;">
+                        🚪 Salida Colectiva (QR)
+                    </h3>
+                    {% if salidas_habilitadas %}
+                        <span class="badge" style="background: #16a34a; color: #fff;">Sesión Activa</span>
+                    {% else %}
+                        <span class="badge" style="background: #64748b; color: #fff;">Inactiva</span>
+                    {% endif %}
+                </div>
+
+                {% if estado_sesiones.salida_activa and control_salida.habilitado_por %}
+                    <p style="font-size: 0.8rem; color: #0c4a6e; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 0.45rem 0.65rem; margin-bottom: 0.8rem;">
+                        Activa por <strong>{{ control_salida.habilitado_por.get_full_name|default:control_salida.habilitado_por.username }}</strong>
+                        {% if control_salida.fecha_habilitacion %}({{ control_salida.fecha_habilitacion|time:"H:i" }}){% endif %}
+                    </p>
+                {% endif %}
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.8rem; margin-bottom: 1rem; display: flex; justify-content: space-around; text-align: center;">
+                    <div>
+                        <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Llegadas</span>
+                        <strong style="color: #16a34a; font-size: 1.1rem;">{{ total_llegadas }}</strong>
+                    </div>
+                    <div style="border-left: 1px solid #cbd5e1;"></div>
+                    <div>
+                        <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; display: block;">Salidas</span>
+                        <strong style="color: #0284c7; font-size: 1.1rem;">{{ total_salidas }}</strong>
+                    </div>
+                </div>
+
+                {% if salidas_habilitadas %}
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <a href="{% url 'asistencia:proyector_salida' evento.pk %}" target="_blank" class="btn btn-primary btn-block" style="background: #0f2b46; color: #fff; text-align: center;">
+                            🖥️ Proyector QR de Salida
+                        </a>
+                        <form method="post" action="{% url 'asistencia:cerrar_sesion_salida' evento.pk %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{% url 'eventos:detalle' evento.pk %}">
+                            <button type="submit" class="btn btn-outline-danger btn-block" style="width: 100%; color: #dc2626; border-color: #fca5a5;">
+                                🛑 Cerrar Sesión de Salida
+                            </button>
+                        </form>
+                    </div>
+                {% else %}
+                    <form method="post" action="{% url 'asistencia:iniciar_sesion_salida' evento.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'eventos:detalle' evento.pk %}">
+                        <button type="submit" class="btn btn-success btn-block" style="width: 100%; background: #16a34a; color: #fff; font-weight: 600;" {% if estado_sesiones.entrada_activa %}disabled title="Cierra primero la sesión de entrada activa"{% endif %}>
+                            🚀 Iniciar Sesión de Salida
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
         </div>
 
         <!-- Tarjeta de Inscripción Pública y QR (Solo Organizador y Staff cuando es ABIERTA o MIXTA) -->

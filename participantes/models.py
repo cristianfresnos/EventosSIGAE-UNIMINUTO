@@ -122,6 +122,13 @@ class Inscripcion(models.Model):
         default=EstadoInscripcion.ACTIVA,
         verbose_name='Estado'
     )
+    nrc = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        db_index=True,
+        verbose_name='NRC del curso'
+    )
 
     class Meta:
         verbose_name = 'Inscripción'

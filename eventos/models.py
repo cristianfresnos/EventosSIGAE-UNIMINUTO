@@ -117,6 +117,14 @@ class Evento(models.Model):
         related_name='eventos_organizados',
         verbose_name='Organizador'
     )
+    docentes_asociados = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        through='DocenteEvento',
+        through_fields=('evento', 'docente'),
+        related_name='eventos_asociados',
+        blank=True,
+        verbose_name='Docentes asociados'
+    )
     fecha_creacion = models.DateTimeField(
         auto_now_add=True,
         verbose_name='Fecha de creación'
@@ -227,3 +235,81 @@ class CalificacionEvento(models.Model):
                 'puntuacion': 'La calificación debe estar comprendida entre 1 y 5 estrellas.'
             })
         self.puntuacion = valor
+
+
+class DocenteEvento(models.Model):
+    """
+    Relación N:M entre Evento y Usuario (rol Docente) para habilitar permisos operativos
+    compartidos entre múltiples profesores asociados al mismo evento institucional.
+    La asignación y revocación es responsabilidad exclusiva de Administrador o Coordinador.
+    """
+    id_asignacion = models.AutoField(primary_key=True)
+    evento = models.ForeignKey(
+        Evento,
+        on_delete=models.CASCADE,
+        related_name='docentes_asociados_rel',
+        verbose_name='Evento'
+    )
+    docente = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='asignaciones_eventos',
+        verbose_name='Docente asociado'
+    )
+    asignado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='docentes_asignados_por',
+        verbose_name='Asignado por'
+    )
+    nrc = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name='NRC / Curso asociado'
+    )
+    activo = models.BooleanField(
+        default=True,
+        verbose_name='Activo'
+    )
+    fecha_asignacion = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Fecha de asignación'
+    )
+
+    class Meta:
+        verbose_name = 'Docente asociado a evento'
+        verbose_name_plural = 'Docentes asociados a eventos'
+        ordering = ['docente__apellidos', 'docente__nombres']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['evento', 'docente'],
+                name='unique_evento_docente_asociado'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['evento', 'activo'], name='idx_docev_evento_activo'),
+            models.Index(fields=['docente', 'activo'], name='idx_docev_docente_activo'),
+        ]
+
+    def __str__(self):
+        nrc_txt = f" (NRC {self.nrc})" if self.nrc else ""
+        return f"{self.docente} — {self.evento}{nrc_txt}"
+
+    def clean(self):
+        super().clean()
+        if self.nrc:
+            self.nrc = self.nrc.strip()
+        if self.docente_id:
+            docente = self.docente
+            rol = getattr(docente, 'rol', None)
+            if not rol or getattr(rol, 'nombre', None) != 'Docente':
+                raise ValidationError({
+                    'docente': 'Solo se pueden asociar usuarios con rol institucional Docente.'
+                })
+            if not docente.is_active:
+                raise ValidationError({
+                    'docente': 'No se puede asociar un usuario docente inactivo.'
+                })

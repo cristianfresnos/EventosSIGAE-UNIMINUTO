@@ -9,6 +9,7 @@ from django.core.exceptions import PermissionDenied
 from django.utils.text import slugify
 
 from eventos.models import Evento
+from eventos.permissions import puede_gestionar_evento
 from auditoria.models import Auditoria
 from . import services
 
@@ -25,20 +26,13 @@ def get_client_ip(request):
 
 def tiene_permiso_evento(user, evento):
     """
-    Verifica si el usuario tiene autorización para descargar documentos del evento:
-    1. Superusuarios y staff de administración.
-    2. El usuario organizador responsable del evento.
-    3. Usuarios con roles institucionales de gestión (Administrador, Coordinador, Docente).
+    Verifica en backend si el usuario tiene autorización para descargar reportes PDF del evento:
+    - Administradores, Coordinadores, staff y superusuarios: acceso autorizado.
+    - Organizador del evento: acceso autorizado.
+    - Docentes asociados activos al evento: acceso autorizado.
+    - Docentes NO asociados y Estudiantes: acceso denegado (403).
     """
-    if not user.is_authenticated:
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    if evento.organizador_id == user.id:
-        return True
-    if hasattr(user, 'rol') and user.rol and user.rol.nombre in ['Administrador', 'Coordinador', 'Docente']:
-        return True
-    return False
+    return puede_gestionar_evento(user, evento)
 
 
 @login_required

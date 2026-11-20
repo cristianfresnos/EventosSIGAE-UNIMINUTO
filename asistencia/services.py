@@ -138,16 +138,20 @@ def generar_imagen_qr_bytes(token_o_texto, formato='PNG'):
     return buffer.getvalue()
 
 
-def registrar_asistencia_llegada(inscripcion, metodo=MetodoAsistencia.QR, operador=None, ip=None, observaciones=None):
+def registrar_asistencia_llegada(inscripcion, metodo=MetodoAsistencia.QR, operador=None, ip=None, observaciones=None, ignorar_bloqueo_entradas=False):
     """
     Registra de manera atómica la llegada de un participante a un evento.
     
     Reglas de negocio aplicadas:
     1. La inscripción debe existir y estar en estado ACTIVA.
-    2. Si ya cuenta con asistencia en estado REGISTRADA: rechaza la duplicidad y retorna aviso.
-    3. Si cuenta con asistencia en estado ANULADA: reactiva la asistencia a REGISTRADA (corrección autorizada).
-    4. Si no cuenta con asistencia: crea la entidad Asistencia vinculada mediante OneToOne.
-    5. Registra la trazabilidad completa en auditoria.Auditoria.
+    2. El evento no debe estar CANCELADO.
+    3. La sesión compartida de entrada debe estar activa (ControlEntradaEvento) en eventos
+       nuevos o que posean control de entrada; en eventos históricos sin ControlEntradaEvento
+       se preserva la compatibilidad heredada sin alterar asistencias previas.
+    4. Si ya cuenta con asistencia en estado REGISTRADA: rechaza la duplicidad y retorna aviso.
+    5. Si cuenta con asistencia en estado ANULADA: reactiva la asistencia a REGISTRADA (corrección autorizada).
+    6. Si no cuenta con asistencia: crea la entidad Asistencia vinculada mediante OneToOne.
+    7. Registra la trazabilidad completa en auditoria.Auditoria con el docente operador.
     """
     if inscripcion.estado != EstadoInscripcion.ACTIVA:
         return {
@@ -158,6 +162,30 @@ def registrar_asistencia_llegada(inscripcion, metodo=MetodoAsistencia.QR, operad
             'participante': inscripcion.participante,
             'evento': inscripcion.evento,
         }
+
+    if hasattr(inscripcion, 'evento') and inscripcion.evento and inscripcion.evento.estado == 'CANCELADO':
+        return {
+            'exito': False,
+            'codigo': 'EVENTO_CANCELADO',
+            'mensaje': "No se puede registrar entrada para un evento en estado CANCELADO.",
+            'asistencia': None,
+            'participante': inscripcion.participante,
+            'evento': inscripcion.evento,
+        }
+
+    if hasattr(inscripcion, 'evento') and inscripcion.evento:
+        if not ignorar_bloqueo_entradas and not es_entrada_habilitada(inscripcion.evento):
+            return {
+                'exito': False,
+                'codigo': 'ENTRADAS_DESHABILITADAS',
+                'mensaje': (
+                    "La sesión de registro de entrada no se encuentra activa para este evento. "
+                    "Un docente asociado debe activarla primero antes de registrar llegadas."
+                ),
+                'asistencia': None,
+                'participante': inscripcion.participante,
+                'evento': inscripcion.evento,
+            }
 
     ahora = timezone.localtime(timezone.now()) if getattr(settings, 'USE_TZ', False) else timezone.now()
     fecha_hoy = ahora.date()
@@ -402,24 +430,194 @@ def es_salida_habilitada(evento):
         return False
 
 
-def iniciar_sesion_salida_service(evento, operador=None, ip=None):
+def es_entrada_habilitada(evento):
     """
-    Inicia o reinicia de forma atómica y auditada la sesión de salida colectiva para el evento.
-    Invalida cualquier código QR de sesiones previas.
+    Determina si el registro de entradas está habilitado para el evento.
+    - Si existe ControlEntradaEvento (todos los eventos nuevos y eventos gestionados con
+      sesiones compartidas): exige entradas_habilitadas=True y fecha_cierre=None.
+    - Compatibilidad histórica estricta: únicamente cuando el evento es anterior a esta
+      funcionalidad y no posee registro ControlEntradaEvento, permite continuidad operativa
+      sin invalidar asistencias históricas.
     """
-    from .models import ControlSalidaEvento
+    try:
+        from .models import ControlEntradaEvento
+        control = ControlEntradaEvento.objects.filter(evento=evento).first()
+        if control is not None:
+            return bool(control.entradas_habilitadas and control.fecha_cierre is None)
+        return True
+    except Exception:
+        return False
+
+
+def obtener_estado_sesiones_evento(evento):
+    """
+    Retorna el estado compartido actual de las sesiones de entrada y salida del evento
+    para consulta unificada entre todos los docentes asociados.
+    """
+    from .models import ControlEntradaEvento, ControlSalidaEvento
+    control_entrada = (
+        ControlEntradaEvento.objects
+        .select_related('habilitado_por', 'cerrado_por')
+        .filter(evento=evento)
+        .first()
+    )
+    control_salida = (
+        ControlSalidaEvento.objects
+        .select_related('habilitado_por', 'cerrado_por')
+        .filter(evento=evento)
+        .first()
+    )
+    entrada_activa = bool(control_entrada and control_entrada.esta_activa)
+    salida_activa = bool(control_salida and control_salida.salidas_habilitadas and control_salida.fecha_cierre is None)
+
+    if entrada_activa:
+        tipo_activa = 'ENTRADA'
+    elif salida_activa:
+        tipo_activa = 'SALIDA'
+    else:
+        tipo_activa = 'NINGUNA'
+
+    return {
+        'control_entrada': control_entrada,
+        'control_salida': control_salida,
+        'tiene_control_entrada': control_entrada is not None,
+        'entrada_activa': entrada_activa,
+        'salida_activa': salida_activa,
+        'entradas_permitidas': es_entrada_habilitada(evento),
+        'salidas_permitidas': es_salida_habilitada(evento),
+        'sesion_activa_tipo': tipo_activa,
+    }
+
+
+def _nombre_operador(user):
+    if not user:
+        return "otro docente"
+    return user.get_full_name() or user.username
+
+
+def iniciar_sesion_entrada_service(evento, operador=None, ip=None):
+    """
+    Inicia de forma atómica, bloqueada por evento y auditada la sesión compartida de
+    registro de entrada (check-in).
+    Impide:
+    - Duplicación de sesión de entrada si ya se encuentra activa.
+    - Exclusión mutua: impide activar entrada mientras exista una sesión de salida activa.
+    - Condiciones de carrera cuando dos docentes ejecutan la acción simultáneamente.
+    """
+    from eventos.models import Evento
+    from .models import ControlEntradaEvento, ControlSalidaEvento
+
     with transaction.atomic():
-        control, _ = ControlSalidaEvento.objects.get_or_create(
+        # Bloqueo pesimista sobre el evento para serializar operaciones concurrentes entre docentes
+        Evento.objects.select_for_update().get(pk=evento.pk)
+
+        control_salida = ControlSalidaEvento.objects.select_for_update().filter(evento=evento).first()
+        if control_salida and control_salida.salidas_habilitadas and control_salida.fecha_cierre is None:
+            quien = _nombre_operador(control_salida.habilitado_por)
+            raise ValidationError(
+                f"No se puede iniciar la sesión de entrada porque existe una sesión de salida activa "
+                f"(iniciada por {quien}). Cierra la sesión de salida primero.",
+                code='SESION_SALIDA_ACTIVA_INCOMPATIBLE',
+            )
+
+        control, _ = ControlEntradaEvento.objects.select_for_update().get_or_create(
+            evento=evento,
+            defaults={'entradas_habilitadas': False}
+        )
+        if control.esta_activa:
+            quien = _nombre_operador(control.habilitado_por)
+            hora = timezone.localtime(control.fecha_habilitacion).strftime('%H:%M') if control.fecha_habilitacion else ''
+            hora_txt = f" a las {hora}" if hora else ""
+            raise ValidationError(
+                f"La sesión de entrada ya se encuentra activa (iniciada por {quien}{hora_txt}). "
+                f"Todos los docentes asociados pueden continuar gestionando la misma sesión.",
+                code='SESION_ENTRADA_YA_ACTIVA',
+            )
+
+        sesion_id = control.iniciar_sesion(operador=operador)
+
+        Auditoria.objects.create(
+            usuario=operador,
+            accion='INICIAR_SESION_ENTRADA',
+            modulo='ASISTENCIA',
+            registro_afectado=f"Sesión entrada {sesion_id} iniciada - Evento ID {evento.pk} - {evento.nombre}"[:100],
+            ip=ip,
+        )
+        return control
+
+
+def cerrar_sesion_entrada_service(evento, operador=None, ip=None):
+    """
+    Cierra de forma atómica y auditada la sesión compartida de registro de entrada.
+    """
+    from eventos.models import Evento
+    from .models import ControlEntradaEvento
+
+    with transaction.atomic():
+        Evento.objects.select_for_update().get(pk=evento.pk)
+
+        control, _ = ControlEntradaEvento.objects.select_for_update().get_or_create(
+            evento=evento,
+            defaults={'entradas_habilitadas': False}
+        )
+        control.cerrar_sesion(operador=operador)
+
+        Auditoria.objects.create(
+            usuario=operador,
+            accion='CERRAR_SESION_ENTRADA',
+            modulo='ASISTENCIA',
+            registro_afectado=f"Sesión entrada cerrada - Evento ID {evento.pk} - {evento.nombre}"[:100],
+            ip=ip,
+        )
+        return control
+
+
+def iniciar_sesion_salida_service(evento, operador=None, ip=None, permitir_reinicio=False):
+    """
+    Inicia de forma atómica, bloqueada por evento y auditada la sesión compartida de salida
+    colectiva para el evento.
+    Impide:
+    - Exclusión mutua: no permite iniciar salida mientras la sesión de entrada esté activa.
+    - Duplicación de sesión de salida: si ya existe una sesión activa (y permitir_reinicio=False),
+      rechaza la duplicación para no invalidar el QR proyectado por otro docente asociado.
+    - Condiciones de carrera cuando dos docentes ejecutan la operación simultáneamente.
+    """
+    from eventos.models import Evento
+    from .models import ControlEntradaEvento, ControlSalidaEvento
+
+    with transaction.atomic():
+        Evento.objects.select_for_update().get(pk=evento.pk)
+
+        control_entrada = ControlEntradaEvento.objects.select_for_update().filter(evento=evento).first()
+        if control_entrada and control_entrada.esta_activa:
+            quien = _nombre_operador(control_entrada.habilitado_por)
+            raise ValidationError(
+                f"No se puede iniciar la sesión de salida mientras la sesión de entrada sigue activa "
+                f"(iniciada por {quien}). Cierra la sesión de entrada primero.",
+                code='SESION_ENTRADA_ACTIVA_INCOMPATIBLE',
+            )
+
+        control, _ = ControlSalidaEvento.objects.select_for_update().get_or_create(
             evento=evento,
             defaults={'salidas_habilitadas': False}
         )
+        if control.salidas_habilitadas and control.fecha_cierre is None and not permitir_reinicio:
+            quien = _nombre_operador(control.habilitado_por)
+            hora = timezone.localtime(control.fecha_habilitacion).strftime('%H:%M') if control.fecha_habilitacion else ''
+            hora_txt = f" a las {hora}" if hora else ""
+            raise ValidationError(
+                f"La sesión de salida ya se encuentra activa (iniciada por {quien}{hora_txt}). "
+                f"Puedes consultar y proyectar el código QR vigente sin crear una nueva sesión.",
+                code='SESION_SALIDA_YA_ACTIVA',
+            )
+
         sesion_id, nonce = control.iniciar_sesion(operador=operador)
 
         Auditoria.objects.create(
             usuario=operador,
             accion='INICIAR_SESION_SALIDA',
             modulo='ASISTENCIA',
-            registro_afectado=f"Sesión {sesion_id} iniciada para Evento ID {evento.pk} - {evento.nombre}",
+            registro_afectado=f"Sesión {sesion_id} iniciada para Evento ID {evento.pk} - {evento.nombre}"[:100],
             ip=ip
         )
         return control
@@ -430,9 +628,11 @@ def cerrar_sesion_salida_service(evento, operador=None, ip=None):
     Cierra de forma definitiva la sesión activa de salida colectiva bajo transacción.
     Invalida inmediatamente el nonce vigente e impide registros posteriores.
     """
+    from eventos.models import Evento
     from .models import ControlSalidaEvento
     with transaction.atomic():
-        control, _ = ControlSalidaEvento.objects.get_or_create(
+        Evento.objects.select_for_update().get(pk=evento.pk)
+        control, _ = ControlSalidaEvento.objects.select_for_update().get_or_create(
             evento=evento,
             defaults={'salidas_habilitadas': False}
         )
@@ -442,7 +642,7 @@ def cerrar_sesion_salida_service(evento, operador=None, ip=None):
             usuario=operador,
             accion='CERRAR_SESION_SALIDA',
             modulo='ASISTENCIA',
-            registro_afectado=f"Sesión de salida cerrada para Evento ID {evento.pk} - {evento.nombre}",
+            registro_afectado=f"Sesión de salida cerrada para Evento ID {evento.pk} - {evento.nombre}"[:100],
             ip=ip
         )
         return control
@@ -453,9 +653,11 @@ def rotar_nonce_salida_service(evento, operador=None, ip=None):
     Rota el nonce vigente de la sesión activa de salida colectiva.
     Invalida los códigos QR emitidos con el nonce anterior.
     """
+    from eventos.models import Evento
     from .models import ControlSalidaEvento
     with transaction.atomic():
-        control = ControlSalidaEvento.objects.filter(evento=evento).first()
+        Evento.objects.select_for_update().get(pk=evento.pk)
+        control = ControlSalidaEvento.objects.select_for_update().filter(evento=evento).first()
         if not control or not control.salidas_habilitadas or control.fecha_cierre is not None:
             raise ValidationError("No se puede rotar el nonce de una sesión inactiva o cerrada.")
         nuevo_nonce = control.rotar_nonce()
@@ -464,7 +666,7 @@ def rotar_nonce_salida_service(evento, operador=None, ip=None):
             usuario=operador,
             accion='ROTAR_NONCE_SALIDA',
             modulo='ASISTENCIA',
-            registro_afectado=f"Nonce rotado para Evento ID {evento.pk} - {evento.nombre}",
+            registro_afectado=f"Nonce rotado para Evento ID {evento.pk} - {evento.nombre}"[:100],
             ip=ip
         )
         return nuevo_nonce
@@ -473,16 +675,26 @@ def rotar_nonce_salida_service(evento, operador=None, ip=None):
 def toggle_salidas_evento_service(evento, habilitar=None, operador=None, ip=None):
     """
     Habilita o deshabilita el registro de salidas para un evento de forma atómica y auditada.
+    Respeta exclusión mutua frente a una sesión de entrada activa.
     Si habilitar es None, invierte el estado actual.
     """
-    from .models import ControlSalidaEvento
+    from eventos.models import Evento
+    from .models import ControlEntradaEvento, ControlSalidaEvento
     with transaction.atomic():
-        control, _ = ControlSalidaEvento.objects.get_or_create(
+        Evento.objects.select_for_update().get(pk=evento.pk)
+        control, _ = ControlSalidaEvento.objects.select_for_update().get_or_create(
             evento=evento,
             defaults={'salidas_habilitadas': False}
         )
         nuevo_estado = (not control.salidas_habilitadas) if habilitar is None else bool(habilitar)
         if nuevo_estado:
+            control_entrada = ControlEntradaEvento.objects.select_for_update().filter(evento=evento).first()
+            if control_entrada and control_entrada.esta_activa:
+                quien = _nombre_operador(control_entrada.habilitado_por)
+                raise ValidationError(
+                    f"No se pueden habilitar salidas mientras la sesión de entrada sigue activa (iniciada por {quien}).",
+                    code='SESION_ENTRADA_ACTIVA_INCOMPATIBLE',
+                )
             if not control.sesion_id or control.fecha_cierre is not None:
                 control.iniciar_sesion(operador=operador)
             else:
@@ -496,7 +708,7 @@ def toggle_salidas_evento_service(evento, habilitar=None, operador=None, ip=None
             usuario=operador,
             accion=accion,
             modulo='ASISTENCIA',
-            registro_afectado=f"Salidas {'habilitadas' if nuevo_estado else 'deshabilitadas'} para Evento ID {evento.pk} - {evento.nombre}",
+            registro_afectado=f"Salidas {'habilitadas' if nuevo_estado else 'deshabilitadas'} para Evento ID {evento.pk} - {evento.nombre}"[:100],
             ip=ip
         )
         return nuevo_estado

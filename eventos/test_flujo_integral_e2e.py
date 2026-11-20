@@ -231,9 +231,30 @@ class FlujoIntegralEventosInscripcionAsistenciaTests(TestCase):
         self.assertEqual(resp_otro_evt.status_code, 403)
 
         # --------------------------------------------------
-        # PASO 9: Responsable autorizado registra la entrada (check-in)
+        # PASO 9: Responsable autorizado activa sesión de entrada y registra check-in
         # --------------------------------------------------
         self.client.login(username='profesor_carlos', password='DocentePass2026*')
+
+        # Evento nuevo exige activación explícita de la sesión de entrada
+        resp_sin_sesion = self.client.post(
+            reverse('asistencia:control_asistencia', kwargs={'id_evento': evento.pk}),
+            {
+                'token_qr': token_externo,
+                'tipo_registro': 'entrada'
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(resp_sin_sesion.status_code, 200)
+        self.assertFalse(resp_sin_sesion.json()['exito'])
+        self.assertEqual(resp_sin_sesion.json()['codigo'], 'ENTRADAS_DESHABILITADAS')
+
+        resp_ini_ent = self.client.post(
+            reverse('asistencia:iniciar_sesion_entrada', kwargs={'id_evento': evento.pk}),
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(resp_ini_ent.status_code, 200)
+        self.assertTrue(resp_ini_ent.json()['exito'])
+
         resp_checkin = self.client.post(
             reverse('asistencia:control_asistencia', kwargs={'id_evento': evento.pk}),
             {
@@ -266,6 +287,14 @@ class FlujoIntegralEventosInscripcionAsistenciaTests(TestCase):
         self.assertFalse(data_dup['exito'])
         self.assertEqual(data_dup['codigo'], 'ASISTENCIA_DUPLICADA')
         self.assertEqual(Asistencia.objects.filter(inscripcion=insc_externo).count(), 1)
+
+        # Cerrar sesión de entrada antes de registrar salida
+        resp_cer_ent = self.client.post(
+            reverse('asistencia:cerrar_sesion_entrada', kwargs={'id_evento': evento.pk}),
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(resp_cer_ent.status_code, 200)
+        self.assertTrue(resp_cer_ent.json()['exito'])
 
         # --------------------------------------------------
         # PASO 11: Se registra la salida y calcula permanencia

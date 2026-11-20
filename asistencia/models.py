@@ -340,3 +340,130 @@ class ControlSalidaEvento(models.Model):
             if not self.nonce_vigente or not hmac.compare_digest(self.nonce_vigente, nonce):
                 return False
         return True
+
+
+class ControlEntradaEvento(models.Model):
+    """
+    Control operativo compartido del evento para habilitar o cerrar
+    el registro de entradas (check-in) mediante QR.
+    Pertenece al evento (nunca a un profesor individual), permitiendo que todos los
+    docentes asociados gestionen la misma sesión con trazabilidad individual.
+    """
+    evento = models.OneToOneField(
+        'eventos.Evento',
+        on_delete=models.CASCADE,
+        related_name='control_entrada',
+        primary_key=True,
+        verbose_name='Evento'
+    )
+    entradas_habilitadas = models.BooleanField(
+        default=False,
+        verbose_name='Registro de entradas habilitado'
+    )
+    fecha_habilitacion = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Fecha de habilitación'
+    )
+    habilitado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='entradas_habilitadas_set',
+        verbose_name='Habilitado por'
+    )
+    sesion_id = models.CharField(
+        max_length=64,
+        blank=True,
+        null=True,
+        verbose_name='Identificador de sesión de entrada'
+    )
+    fecha_cierre = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Fecha de cierre'
+    )
+    cerrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='entradas_cerradas_set',
+        verbose_name='Cerrado por'
+    )
+    fecha_modificacion = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Fecha de última modificación'
+    )
+
+    class Meta:
+        verbose_name = 'Control de entrada de evento'
+        verbose_name_plural = 'Controles de entrada de eventos'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['sesion_id'],
+                condition=models.Q(sesion_id__isnull=False),
+                name='unique_sesion_id_control_entrada'
+            )
+        ]
+
+    def __str__(self):
+        estado_str = "Habilitadas" if self.esta_activa else "Inactivas/Cerradas"
+        return f"Control Entrada Evento #{self.pk} - {estado_str}"
+
+    @property
+    def esta_activa(self):
+        """Indica si la sesión compartida de registro de entrada se encuentra activa."""
+        return bool(self.entradas_habilitadas and self.fecha_cierre is None)
+
+    def clean(self):
+        super().clean()
+        if not self.sesion_id:
+            self.sesion_id = None
+
+    def save(self, *args, **kwargs):
+        if not self.sesion_id:
+            self.sesion_id = None
+        super().save(*args, **kwargs)
+
+    def iniciar_sesion(self, operador=None):
+        """
+        Inicia la sesión compartida de registro de entrada bajo transacción y bloqueo.
+        """
+        with transaction.atomic():
+            control = ControlEntradaEvento.objects.select_for_update().filter(pk=self.pk).first()
+            target = control if control is not None else self
+
+            target.entradas_habilitadas = True
+            target.sesion_id = f"ENT-{self.evento_id}-{uuid.uuid4().hex[:16]}"
+            target.fecha_habilitacion = timezone.now()
+            target.habilitado_por = operador
+            target.fecha_cierre = None
+            target.cerrado_por = None
+            target.save()
+
+            self.entradas_habilitadas = target.entradas_habilitadas
+            self.sesion_id = target.sesion_id
+            self.fecha_habilitacion = target.fecha_habilitacion
+            self.habilitado_por = target.habilitado_por
+            self.fecha_cierre = target.fecha_cierre
+            self.cerrado_por = target.cerrado_por
+            return self.sesion_id
+
+    def cerrar_sesion(self, operador=None):
+        """
+        Cierra la sesión compartida de registro de entrada bajo transacción y bloqueo.
+        """
+        with transaction.atomic():
+            control = ControlEntradaEvento.objects.select_for_update().filter(pk=self.pk).first()
+            target = control if control is not None else self
+
+            target.entradas_habilitadas = False
+            target.fecha_cierre = timezone.now()
+            target.cerrado_por = operador
+            target.save()
+
+            self.entradas_habilitadas = target.entradas_habilitadas
+            self.fecha_cierre = target.fecha_cierre
+            self.cerrado_por = target.cerrado_por

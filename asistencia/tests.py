@@ -1940,11 +1940,16 @@ class ControlAsistenciaIntegralQRTests(TestCase):
         self.assertEqual(cod, 'SESION_CERRADA')
 
     def test_19_invalidacion_qr_anteriores_tras_reinicio_sesion(self):
-        """19. Invalidación de tokens al reiniciar una nueva sesión con nuevo sesion_id."""
+        """19. Invalidación de tokens al cerrar y abrir una nueva sesión con nuevo sesion_id."""
         control = iniciar_sesion_salida_service(self.evento, operador=self.profesor)
         token_sesion_1 = generar_token_salida_evento(self.evento, control=control)
 
-        # Reinicio de sesión (nuevo sesion_id)
+        # Intentar duplicar sesión mientras está activa es bloqueado por protección de concurrencia
+        with self.assertRaises(ValidationError):
+            iniciar_sesion_salida_service(self.evento, operador=self.profesor)
+
+        # Cierre formal y apertura de nueva sesión (nuevo sesion_id)
+        cerrar_sesion_salida_service(self.evento, operador=self.profesor)
         control_2 = iniciar_sesion_salida_service(self.evento, operador=self.profesor)
         self.assertNotEqual(control.sesion_id, control_2.sesion_id)
 

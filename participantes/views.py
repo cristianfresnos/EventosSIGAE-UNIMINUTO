@@ -13,6 +13,7 @@ from django.utils import timezone
 
 from auditoria.models import Auditoria
 from eventos.models import Evento, EstadoEvento, ModalidadInscripcion, CalificacionEvento
+from eventos.permissions import puede_gestionar_evento as puede_gestionar_evento_unificado, obtener_nrcs_evento
 from eventos.services import es_estudiante_elegible_rol
 from asistencia.models import Asistencia, EstadoAsistencia
 from asistencia.services import generar_token_qr, generar_imagen_qr_bytes, es_salida_habilitada
@@ -89,6 +90,17 @@ def inscribirse_evento(request, id_evento):
     # CASO A: Usuario Autenticado (Institucional)
     if request.user.is_authenticated:
         participante = obtener_o_crear_perfil_participante(request.user)
+        nrc_raw = (request.POST.get('nrc') or '').strip()
+        nrcs_validos = obtener_nrcs_evento(evento)
+        nrc_validado = None
+        if nrc_raw:
+            if nrcs_validos:
+                if nrc_raw not in nrcs_validos:
+                    messages.error(request, f"El NRC '{nrc_raw}' no corresponde a los cursos asociados a este evento.")
+                    return redirect('eventos:detalle', id_evento=evento.pk)
+                nrc_validado = nrc_raw
+            else:
+                nrc_validado = nrc_raw[:20]
 
         with transaction.atomic():
             inscripcion = Inscripcion.objects.filter(evento=evento, participante=participante).first()
@@ -100,6 +112,8 @@ def inscribirse_evento(request, id_evento):
                 else:
                     # Reactivar inscripción previamente cancelada
                     inscripcion.estado = EstadoInscripcion.ACTIVA
+                    if nrc_validado:
+                        inscripcion.nrc = nrc_validado
                     inscripcion.save()
 
                     Auditoria.objects.create(
@@ -115,7 +129,8 @@ def inscribirse_evento(request, id_evento):
                 nueva_inscripcion = Inscripcion.objects.create(
                     evento=evento,
                     participante=participante,
-                    estado=EstadoInscripcion.ACTIVA
+                    estado=EstadoInscripcion.ACTIVA,
+                    nrc=nrc_validado
                 )
                 Auditoria.objects.create(
                     usuario=request.user,
@@ -351,16 +366,8 @@ def cancelar_inscripcion(request, id_inscripcion):
 
 
 def puede_gestionar_evento(user, evento):
-    """Comprueba si un usuario cuenta con facultades de administración u organización sobre el evento."""
-    if not user.is_authenticated:
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    if evento.organizador_id == user.id:
-        return True
-    if hasattr(user, 'rol') and user.rol and user.rol.nombre in ['Administrador', 'Coordinador']:
-        return True
-    return False
+    """Comprueba si un usuario cuenta con facultades de administración, organización o docencia asociada sobre el evento."""
+    return puede_gestionar_evento_unificado(user, evento)
 
 
 @login_required

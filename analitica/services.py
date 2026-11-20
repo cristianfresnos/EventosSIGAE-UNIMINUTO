@@ -10,7 +10,8 @@ from django.utils import timezone
 from django.db.models import Avg, Count, Q, F
 from django.db.models.functions import TruncMonth
 
-from eventos.models import Evento, EstadoEvento, ModalidadEvento, CategoriaEvento, CalificacionEvento
+from eventos.models import Evento, EstadoEvento, ModalidadEvento, CategoriaEvento, CalificacionEvento, DocenteEvento
+from eventos.permissions import es_admin_o_coordinador, obtener_eventos_gestionables
 from eventos.services import calcular_estadisticas_calificacion_global
 from participantes.models import Participante, Inscripcion, EstadoInscripcion
 from asistencia.models import Asistencia, EstadoAsistencia, MetodoAsistencia
@@ -21,15 +22,15 @@ def puede_ver_dashboard(user):
     Determina si el usuario tiene permiso para acceder al módulo analítico:
     - Superusuarios y staff institucional.
     - Usuarios con rol 'Administrador' o 'Coordinador'.
-    - Usuarios que sean organizadores de al menos un evento o con rol 'Docente'.
+    - Usuarios que sean organizadores, docentes asociados activos o con rol 'Docente'.
     """
     if not user.is_authenticated:
         return False
-    if user.is_superuser or user.is_staff:
-        return True
-    if hasattr(user, 'rol') and user.rol and user.rol.nombre in ['Administrador', 'Coordinador']:
+    if es_admin_o_coordinador(user):
         return True
     if Evento.objects.filter(organizador=user).exists():
+        return True
+    if DocenteEvento.objects.filter(docente=user, activo=True).exists():
         return True
     if hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Docente':
         return True
@@ -39,34 +40,20 @@ def puede_ver_dashboard(user):
 def tiene_alcance_global(user):
     """
     Indica si el usuario puede consultar indicadores globales de toda la institución
-    o si su alcance está limitado a sus eventos organizados.
+    o si su alcance está limitado a sus eventos organizados o asociados.
     """
-    if not user.is_authenticated:
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    if hasattr(user, 'rol') and user.rol and user.rol.nombre in ['Administrador', 'Coordinador']:
-        return True
-    return False
+    return es_admin_o_coordinador(user)
 
 
 def obtener_eventos_permitidos(user):
     """
     Retorna el QuerySet de eventos que el usuario tiene autorización de consultar:
-    - Alcance global: todos los eventos.
-    - Organizador o Docente: únicamente eventos donde organizador == user.
+    - Alcance global (Administrador / Coordinador / staff): todos los eventos.
+    - Organizador o Docente asociado: únicamente eventos donde es organizador o
+      está asociado activamente en DocenteEvento.
     - Sin permisos: QuerySet vacío.
     """
-    if not user.is_authenticated:
-        return Evento.objects.none()
-
-    if tiene_alcance_global(user):
-        return Evento.objects.all().select_related('categoria', 'organizador')
-
-    if Evento.objects.filter(organizador=user).exists() or (hasattr(user, 'rol') and user.rol and user.rol.nombre == 'Docente'):
-        return Evento.objects.filter(organizador=user).select_related('categoria', 'organizador')
-
-    return Evento.objects.none()
+    return obtener_eventos_gestionables(user)
 
 
 def filtrar_eventos(eventos_qs, filtros=None):
