@@ -16,8 +16,9 @@ urlpatterns = [
     path('invitacion/acceso/detalle/', views.ver_invitacion, name='ver_invitacion'),
     path('invitacion/acceso/responder/', views.responder_invitacion, name='responder_invitacion'),
 
-    # Flujo de inscripción pública y participantes externos (Etapa 7.2.2)
+    # Flujo de inscripción pública, consulta/recuperación y participantes externos (Etapa 7.2.2)
     path('evento/<int:id_evento>/registro-publico/', views.inscripcion_publica_view, name='inscripcion_publica'),
+    path('evento/<int:id_evento>/consultar-inscripcion/', views.consultar_inscripcion_publica, name='consultar_inscripcion_publica'),
     path('evento/<int:id_evento>/qr-inscripcion/', views.qr_inscripcion_publica, name='qr_inscripcion_publica'),
     path('externo/mi-inscripcion/', views.ver_inscripcion_externa, name='ver_inscripcion_externa'),
     path('externo/<str:token>/', views.consultar_acceso_externo, name='consultar_acceso_externo'),

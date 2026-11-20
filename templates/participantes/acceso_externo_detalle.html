@@ -119,13 +119,16 @@
                         </div>
                     </div>
 
-                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <div class="no-print" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                         <a href="{% url 'asistencia:pase_digital' inscripcion.pk %}" class="btn btn-secondary btn-sm" target="_blank">
-                            🖨️ Ver Pase Imprimible
+                            🎟️ Ver Pase Digital
                         </a>
                         <a href="{% url 'asistencia:qr_imagen' inscripcion.pk %}" class="btn btn-secondary btn-sm" download>
                             📥 Descargar QR (PNG)
                         </a>
+                        <button type="button" onclick="window.print();" class="btn btn-secondary btn-sm">
+                            🖨️ Guardar Comprobante
+                        </button>
                         {% if salidas_habilitadas and llegada_registrada and not salida_registrada %}
                             <a href="{% url 'asistencia:escanear_salida' evento.pk %}" class="btn btn-warning btn-sm" style="background: #eab308; color: #000; font-weight: 700; border: none;">
                                 🚪 Escanear QR de Salida
@@ -163,7 +166,7 @@
                     <li><strong>Puntualidad:</strong> Te sugerimos presentarte con al menos 15 minutos de anticipación a la hora señalada.</li>
                     <li><strong>Documento de identidad:</strong> Presenta tu documento físico oficial ({{ participante.documento }}) al momento del registro de ingreso.</li>
                     <li><strong>Control de asistencia:</strong> En el acceso al recinto se realizará la validación de asistencia institucional.</li>
-                    <li><strong>Enlace personal seguro:</strong> Guarda el enlace que recibiste por correo electrónico para volver a consultar esta información en cualquier momento.</li>
+                    <li><strong>Cómo recuperar tu inscripción si cierras el navegador:</strong> Vuelve a escanear el código QR del evento, selecciona <em>«¿Ya estás inscrito? Consulta tu inscripción»</em> e ingresa tu documento ({{ participante.documento }}) junto con tu correo electrónico{% if participante.telefono %} o teléfono{% endif %} registrado.</li>
                 </ul>
             </div>
         </section>
@@ -185,7 +188,21 @@
         text-align: center;
     }
 }
+@media print {
+    .no-print, .app-header, .app-footer, .breadcrumb-nav {
+        display: none !important;
+    }
+    .portal-header {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
 </style>
+<script>
+try {
+    localStorage.setItem('sigae_inscrito_evt_{{ evento.pk }}', '1');
+} catch (e) {}
+</script>
 
 <script>
 {% if qr_base64 and not salida_registrada %}

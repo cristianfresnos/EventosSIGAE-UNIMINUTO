@@ -95,6 +95,52 @@ class InscripcionExternaForm(forms.ModelForm):
 InscripcionPublicaForm = InscripcionExternaForm
 
 
+class ConsultaInscripcionPublicaForm(forms.Form):
+    """
+    Formulario público de consulta y recuperación de inscripción existente para un evento.
+    Solicita número de documento y un segundo dato de verificación ya registrado en el
+    formulario de inscripción (correo electrónico o teléfono) sin requerir inicio de sesión.
+    """
+    documento = forms.CharField(
+        max_length=20,
+        required=True,
+        label='Número de documento',
+        error_messages={
+            'required': 'Ingresa tu número de documento para consultar tu inscripción.',
+        },
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'id': 'consulta_documento',
+            'placeholder': 'Ej. 10203040',
+            'autocomplete': 'off',
+            'required': True,
+        })
+    )
+    dato_verificacion = forms.CharField(
+        max_length=254,
+        required=True,
+        label='Correo electrónico o teléfono registrado',
+        error_messages={
+            'required': 'Ingresa el correo electrónico o el teléfono con el que te inscribiste.',
+        },
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'id': 'consulta_dato_verificacion',
+            'placeholder': 'Ej. correo@ejemplo.com o 3101234567',
+            'autocomplete': 'off',
+            'required': True,
+        })
+    )
+
+    def clean_documento(self):
+        doc = self.cleaned_data.get('documento', '')
+        return doc.strip()
+
+    def clean_dato_verificacion(self):
+        val = self.cleaned_data.get('dato_verificacion', '')
+        return val.strip()
+
+
 class InvitacionEventoForm(forms.ModelForm):
     """
     Formulario para el envío de invitaciones individuales a eventos institucionales (RF-01).

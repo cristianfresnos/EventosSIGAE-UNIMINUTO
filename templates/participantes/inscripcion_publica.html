@@ -21,12 +21,12 @@
                 Inscripción al Evento
             </h2>
             <p class="subtitle" style="color: #64748b; font-size: 0.95rem;">
-                Participa en <strong>{{ evento.nombre }}</strong> completando el siguiente formulario.
+                Inscríbete o recupera tu pase QR para <strong>{{ evento.nombre }}</strong> sin necesidad de iniciar sesión.
             </p>
         </div>
 
         <!-- Resumen del Evento -->
-        <div class="event-mini-summary" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.75rem;">
+        <div class="event-mini-summary" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem;">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; font-size: 0.9rem; color: #334155;">
                 <div>📅 <strong>Fecha:</strong> {{ evento.fecha|date:"d/m/Y" }}</div>
                 <div>⏰ <strong>Horario:</strong> {{ evento.hora_inicio|time:"H:i" }} - {{ evento.hora_fin|time:"H:i" }}</div>
@@ -45,19 +45,67 @@
             {% endif %}
         </div>
 
-        {% if esta_lleno %}
-            <div class="alert alert-error" style="background: #fee2e2; border: 1px solid #f87171; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
-                <h3 style="color: #b91c1c; font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;">🚫 Cupo Agotado para Nuevas Inscripciones</h3>
-                <p style="color: #7f1d1d; margin: 0 0 0.5rem 0; font-size: 0.92rem;">
-                    Se ha alcanzado la capacidad máxima de asistentes configurada para este evento. No se admiten nuevas inscripciones.
-                </p>
-                <p style="color: #0369a1; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 0.65rem; margin: 0.75rem 0 0 0; font-size: 0.88rem;">
-                    ℹ️ <strong>¿Ya te inscribiste previamente?</strong> Ingresa exactamente tu documento y correo electrónico registrados en el formulario inferior para recuperar tu acceso y obtener tu pase y código QR de asistencia.
-                </p>
+        {% if sesion_activa_evento %}
+            <!-- Acceso directo cuando la sesión externa aún sigue activa en este navegador -->
+            <div style="background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                <div style="color: #065f46; font-size: 0.92rem;">
+                    <strong>✓ Ya tienes una inscripción activa en este navegador</strong><br>
+                    <span style="color: #047857; font-size: 0.86rem;">Puedes abrir inmediatamente tu comprobante y tu código QR de asistencia.</span>
+                </div>
+                <a href="{% url 'participantes:ver_inscripcion_externa' %}" class="btn btn-primary btn-sm" style="background: #16a34a; border-color: #16a34a; font-weight: 700;">
+                    🎟️ Ver Mi Comprobante y QR
+                </a>
             </div>
         {% endif %}
 
-        <form method="post" novalidate class="custom-form">
+        <!-- Aviso complementario desde localStorage (sin datos sensibles ni tokens) -->
+        <div id="localStorageHint" style="display: none; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 10px; padding: 0.95rem 1.15rem; margin-bottom: 1.25rem; color: #1e3a8a; font-size: 0.88rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <span>ℹ️ <strong>¿Ya te inscribiste desde este navegador?</strong> Puedes consultar y recuperar tu código QR sin registrarte nuevamente.</span>
+                <button type="button" onclick="activarModoPublico('consultar')" class="btn btn-sm" style="background: #002d62; color: #ffffff; border: none; font-weight: 600;">
+                    🔍 Consultar mi inscripción
+                </button>
+            </div>
+        </div>
+
+        <!-- Selector visible de modo: Nueva Inscripción vs. Consultar Inscripción Existente -->
+        <div class="public-mode-tabs" role="tablist" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; background: #f1f5f9; padding: 0.45rem; border-radius: 10px; margin-bottom: 1.5rem;">
+            <button type="button" id="btnTabInscribir" role="tab" onclick="activarModoPublico('inscribir')"
+                style="padding: 0.75rem 0.9rem; border-radius: 8px; border: none; font-weight: 700; font-size: 0.92rem; cursor: pointer; transition: all 0.15s ease;">
+                📝 Nueva inscripción
+            </button>
+            <button type="button" id="btnTabConsultar" role="tab" onclick="activarModoPublico('consultar')"
+                style="padding: 0.75rem 0.9rem; border-radius: 8px; border: none; font-weight: 700; font-size: 0.92rem; cursor: pointer; transition: all 0.15s ease;">
+                🔍 ¿Ya estás inscrito? Consulta tu inscripción
+            </button>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- PESTAÑA 1: NUEVA INSCRIPCIÓN                                   -->
+        <!-- ============================================================== -->
+        <div id="panelInscribir">
+            {% if esta_lleno %}
+                <div class="alert alert-error" style="background: #fee2e2; border: 1px solid #f87171; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
+                    <h3 style="color: #b91c1c; font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;">🚫 Cupo Agotado para Nuevas Inscripciones</h3>
+                    <p style="color: #7f1d1d; margin: 0 0 0.5rem 0; font-size: 0.92rem;">
+                        Se ha alcanzado la capacidad máxima de asistentes configurada para este evento. No se admiten nuevas inscripciones.
+                    </p>
+                    <p style="color: #0369a1; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 0.65rem; margin: 0.75rem 0 0 0; font-size: 0.88rem;">
+                        ℹ️ <strong>¿Ya te inscribiste previamente?</strong> Usa la pestaña
+                        <a href="javascript:void(0)" onclick="activarModoPublico('consultar')" style="color: #002d62; font-weight: 700; text-decoration: underline;">¿Ya estás inscrito? Consulta tu inscripción</a>
+                        o ingresa tu documento y correo registrados para recuperar tu pase y código QR de asistencia.
+                    </p>
+                </div>
+            {% else %}
+                <div style="background: #f8fafc; border-left: 4px solid #eaaa00; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; font-size: 0.88rem; color: #334155;">
+                    ¿Ya te registraste antes y cerraste el navegador?
+                    <a href="javascript:void(0)" onclick="activarModoPublico('consultar')" style="color: #002d62; font-weight: 700; text-decoration: underline;">
+                        ¿Ya estás inscrito? Consulta tu inscripción aquí
+                    </a>.
+                </div>
+            {% endif %}
+
+            <form method="post" action="{% url 'participantes:inscripcion_publica' evento.pk %}" novalidate class="custom-form">
                 {% csrf_token %}
 
                 {% if form.non_field_errors %}
@@ -83,7 +131,7 @@
                 </div>
 
                 <!-- Nombres y Apellidos -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                <div class="public-form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
                     <div class="form-group">
                         <label for="{{ form.nombres.id_for_label }}" class="form-label" style="font-weight: 600; color: #1e293b;">
                             {{ form.nombres.label }} <span style="color: #dc2626;">*</span>
@@ -106,14 +154,14 @@
                 </div>
 
                 <!-- Correo y Teléfono -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                <div class="public-form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
                     <div class="form-group">
                         <label for="{{ form.correo.id_for_label }}" class="form-label" style="font-weight: 600; color: #1e293b;">
                             {{ form.correo.label }} <span style="color: #dc2626;">*</span>
                         </label>
                         {{ form.correo }}
                         <small class="form-hint" style="color: #64748b; font-size: 0.82rem; display: block; margin-top: 0.25rem;">
-                            Enviaremos tu enlace seguro de acceso y confirmación a este correo.
+                            Lo usarás también para recuperar tu inscripción si cierras el navegador.
                         </small>
                         {% if form.correo.errors %}
                             <div class="form-error" style="color: #dc2626; font-size: 0.82rem; margin-top: 0.25rem;">{{ form.correo.errors.0 }}</div>
@@ -165,13 +213,70 @@
                 </div>
 
                 <!-- Acciones del Formulario -->
-                <div class="form-footer-actions" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem;">
+                <div class="form-footer-actions" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem; flex-wrap: wrap;">
                     <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary">← Cancelar y Volver</a>
                     <button type="submit" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 1rem; font-weight: 600;">
                         {% if esta_lleno %}🔍 Recuperar mi Inscripción y Pase QR{% else %}✓ Confirmar mi Inscripción{% endif %}
                     </button>
                 </div>
-        </form>
+            </form>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- PESTAÑA 2: CONSULTAR / RECUPERAR INSCRIPCIÓN EXISTENTE         -->
+        <!-- ============================================================== -->
+        <div id="panelConsultar" style="display: none;">
+            <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 1.25rem; color: #0c4a6e; font-size: 0.9rem; line-height: 1.5;">
+                <strong>🔍 Recupera tu inscripción y tu código QR personal</strong><br>
+                Ingresa tu número de documento y el correo electrónico (o teléfono) con el que te registraste en <strong>{{ evento.nombre }}</strong>. Conservaremos exactamente tu inscripción y tu código QR original.
+            </div>
+
+            {% if consulta_error %}
+                <div class="alert alert-error" style="background: {% if consulta_bloqueada %}#fffbeb{% else %}#fee2e2{% endif %}; border: 1px solid {% if consulta_bloqueada %}#f59e0b{% else %}#f87171{% endif %}; border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 1.25rem; color: {% if consulta_bloqueada %}#92400e{% else %}#991b1b{% endif %}; font-size: 0.92rem;">
+                    <strong>{% if consulta_bloqueada %}⏳ Límite de intentos alcanzado{% else %}⚠ No fue posible consultar la inscripción{% endif %}</strong>
+                    <p style="margin: 0.35rem 0 0 0;">{{ consulta_error }}</p>
+                </div>
+            {% endif %}
+
+            <form method="post" action="{% url 'participantes:consultar_inscripcion_publica' evento.pk %}" novalidate class="custom-form">
+                {% csrf_token %}
+
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label for="consulta_documento" class="form-label" style="font-weight: 600; color: #1e293b;">
+                        {{ consulta_form.documento.label }} <span style="color: #dc2626;">*</span>
+                    </label>
+                    {{ consulta_form.documento }}
+                    <small class="form-hint" style="color: #64748b; font-size: 0.82rem; display: block; margin-top: 0.25rem;">
+                        Ingresa el mismo documento que registraste al inscribirte.
+                    </small>
+                    {% if consulta_form.documento.errors %}
+                        <div class="form-error" style="color: #dc2626; font-size: 0.82rem; margin-top: 0.25rem;">{{ consulta_form.documento.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label for="consulta_dato_verificacion" class="form-label" style="font-weight: 600; color: #1e293b;">
+                        {{ consulta_form.dato_verificacion.label }} <span style="color: #dc2626;">*</span>
+                    </label>
+                    {{ consulta_form.dato_verificacion }}
+                    <small class="form-hint" style="color: #64748b; font-size: 0.82rem; display: block; margin-top: 0.25rem;">
+                        Por seguridad, validamos este dato junto con tu documento antes de mostrar tu pase QR.
+                    </small>
+                    {% if consulta_form.dato_verificacion.errors %}
+                        <div class="form-error" style="color: #dc2626; font-size: 0.82rem; margin-top: 0.25rem;">{{ consulta_form.dato_verificacion.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-footer-actions" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem; flex-wrap: wrap;">
+                    <button type="button" onclick="activarModoPublico('inscribir')" class="btn btn-secondary">
+                        ← Ir a Nueva Inscripción
+                    </button>
+                    <button type="submit" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 1rem; font-weight: 700; background: #002d62;">
+                        🎟️ Consultar y Recuperar mi QR
+                    </button>
+                </div>
+            </form>
+        </div>
 
         <div class="auth-footer" style="margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid #e2e8f0; text-align: center; font-size: 0.88rem; color: #64748b;">
             <p style="margin: 0 0 0.4rem 0;">¿Perteneces a la comunidad UNIMINUTO (estudiante, docente o administrativo)?</p>
@@ -183,5 +288,56 @@
         </div>
     </div>
 </div>
-{% endblock %}
 
+<style>
+@media (max-width: 640px) {
+    .public-mode-tabs,
+    .public-form-grid-2 {
+        grid-template-columns: 1fr !important;
+    }
+    .form-card {
+        padding: 1.25rem !important;
+    }
+}
+</style>
+
+<script>
+function activarModoPublico(modo) {
+    var pIns = document.getElementById('panelInscribir');
+    var pCon = document.getElementById('panelConsultar');
+    var bIns = document.getElementById('btnTabInscribir');
+    var bCon = document.getElementById('btnTabConsultar');
+
+    if (modo === 'consultar') {
+        pIns.style.display = 'none';
+        pCon.style.display = 'block';
+        bCon.style.background = '#002d62';
+        bCon.style.color = '#ffffff';
+        bCon.style.boxShadow = '0 2px 6px rgba(0,45,98,0.2)';
+        bIns.style.background = 'transparent';
+        bIns.style.color = '#475569';
+        bIns.style.boxShadow = 'none';
+    } else {
+        pIns.style.display = 'block';
+        pCon.style.display = 'none';
+        bIns.style.background = '#002d62';
+        bIns.style.color = '#ffffff';
+        bIns.style.boxShadow = '0 2px 6px rgba(0,45,98,0.2)';
+        bCon.style.background = 'transparent';
+        bCon.style.color = '#475569';
+        bCon.style.boxShadow = 'none';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var modoInicial = "{{ modo_activo|default:'inscribir' }}";
+    activarModoPublico(modoInicial);
+    try {
+        if (localStorage.getItem('sigae_inscrito_evt_{{ evento.pk }}') === '1' && modoInicial !== 'consultar') {
+            var hint = document.getElementById('localStorageHint');
+            if (hint) hint.style.display = 'block';
+        }
+    } catch (e) {}
+});
+</script>
+{% endblock %}
