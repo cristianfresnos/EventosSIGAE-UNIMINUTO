@@ -73,13 +73,12 @@ class EventoAdmin(admin.ModelAdmin):
         return HttpResponseRedirect(reverse('reportes:reporte_consolidado_pdf', args=[evento.pk]))
 
     def save_model(self, request, obj, form, change):
-        super().save_model(request, obj, form, change)
-        if not change:
-            from asistencia.models import ControlEntradaEvento
-            ControlEntradaEvento.objects.get_or_create(
-                evento=obj,
-                defaults={'entradas_habilitadas': False},
-            )
+        from django.db import transaction
+        from asistencia.services import inicializar_controles_sesiones_evento
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            if not change:
+                inicializar_controles_sesiones_evento(obj)
 
 
 @admin.register(CalificacionEvento)

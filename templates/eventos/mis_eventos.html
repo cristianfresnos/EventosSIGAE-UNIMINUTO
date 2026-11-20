@@ -73,10 +73,12 @@
                     <div class="table-actions">
                         <a href="{% url 'asistencia:control_asistencia' evento.pk %}" class="btn btn-sm btn-primary" title="Control de Asistencia QR y Manual">📱 Asistencia</a>
                         <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-sm btn-secondary" title="Ver detalle">Ver</a>
-                        <a href="{% url 'eventos:editar' evento.pk %}" class="btn btn-sm btn-secondary" title="Editar evento">Editar</a>
+                        {% if evento.puede_editar %}
+                            <a href="{% url 'eventos:editar' evento.pk %}" class="btn btn-sm btn-secondary" title="Editar evento">Editar</a>
+                        {% endif %}
                         <a href="{% url 'reportes:planilla_asistencia_pdf' evento.pk %}" class="btn btn-sm btn-secondary btn-icon" title="Descargar Planilla PDF">📄 Planilla</a>
                         <a href="{% url 'reportes:reporte_consolidado_pdf' evento.pk %}" class="btn btn-sm btn-secondary btn-icon" title="Descargar Reporte PDF">📊 Reporte</a>
-                        {% if evento.estado != 'CANCELADO' and evento.estado != 'FINALIZADO' %}
+                        {% if evento.puede_cancelar and evento.estado != 'CANCELADO' and evento.estado != 'FINALIZADO' %}
                             <a href="{% url 'eventos:cancelar' evento.pk %}" class="btn btn-sm btn-outline-danger" title="Cancelar formalmente el evento" style="color: #dc2626; border-color: #fca5a5;">✕ Cancelar</a>
                         {% endif %}
                     </div>

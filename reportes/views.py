@@ -55,7 +55,7 @@ def descargar_planilla_asistencia_pdf(request, id_evento):
         usuario=request.user,
         accion='DESCARGAR_PLANILLA_PDF',
         modulo='REPORTES',
-        registro_afectado=f"Evento ID {evento.pk} - {evento.nombre}",
+        registro_afectado=f"Evento ID {evento.pk} - {evento.nombre}"[:100],
         ip=get_client_ip(request)
     )
 
@@ -89,7 +89,7 @@ def descargar_reporte_consolidado_pdf(request, id_evento):
         usuario=request.user,
         accion='DESCARGAR_REPORTE_PDF',
         modulo='REPORTES',
-        registro_afectado=f"Evento ID {evento.pk} - {evento.nombre}",
+        registro_afectado=f"Evento ID {evento.pk} - {evento.nombre}"[:100],
         ip=get_client_ip(request)
     )
 

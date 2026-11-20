@@ -848,7 +848,7 @@ def anular_asistencia(request, id_asistencia):
         usuario=request.user,
         accion='ANULAR_ASISTENCIA',
         modulo='ASISTENCIA',
-        registro_afectado=f"Asistencia ID {asistencia.pk} anulada - Participante {asistencia.inscripcion.participante.documento} - Evento {evento.pk}",
+        registro_afectado=f"Asistencia ID {asistencia.pk} anulada - Participante {asistencia.inscripcion.participante.documento} - Evento {evento.pk}"[:100],
         ip=get_client_ip(request)
     )
 

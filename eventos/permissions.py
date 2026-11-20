@@ -51,10 +51,11 @@ def es_docente_asociado(user, evento):
 
 def puede_gestionar_evento(user, evento):
     """
-    Regla unificada de permisos operativos sobre un evento:
+    Regla unificada de permisos operativos compartidos sobre un evento:
     - Administradores, Coordinadores, staff y superusuarios: acceso autorizado.
     - Organizador del evento: acceso autorizado.
-    - Docentes asociados activos (DocenteEvento): mismos permisos operativos compartidos.
+    - Docentes asociados activos (DocenteEvento): mismos permisos operativos compartidos
+      (asistencia, sesiones QR, participantes, reportes PDF y estadísticas).
     - Docentes NO asociados y Estudiantes: acceso denegado (False).
     """
     if not user or not getattr(user, 'is_authenticated', False) or evento is None:
@@ -62,6 +63,32 @@ def puede_gestionar_evento(user, evento):
     if es_admin_o_coordinador(user):
         return True
     return es_docente_asociado(user, evento)
+
+
+def puede_editar_evento(user, evento):
+    """
+    Regla centralizada de permiso estructural para editar un evento:
+    - Administradores, Coordinadores, staff y superusuarios: permitido según su alcance institucional.
+    - Organizador del evento: permitido sobre sus propios eventos.
+    - Docentes asociados que NO sean el organizador: denegado (solo permisos operativos).
+    - Docentes NO asociados y Estudiantes: denegado.
+    """
+    if not user or not getattr(user, 'is_authenticated', False) or evento is None:
+        return False
+    if es_admin_o_coordinador(user):
+        return True
+    return evento.organizador_id == user.id
+
+
+def puede_cancelar_evento(user, evento):
+    """
+    Regla centralizada de permiso estructural para cancelar formalmente un evento:
+    - Administradores, Coordinadores, staff y superusuarios: permitido según su alcance institucional.
+    - Organizador del evento: permitido sobre sus propios eventos.
+    - Docentes asociados que NO sean el organizador: denegado (solo permisos operativos).
+    - Docentes NO asociados y Estudiantes: denegado.
+    """
+    return puede_editar_evento(user, evento)
 
 
 def puede_asignar_docentes(user):

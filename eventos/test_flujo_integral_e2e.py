@@ -297,11 +297,27 @@ class FlujoIntegralEventosInscripcionAsistenciaTests(TestCase):
         self.assertTrue(resp_cer_ent.json()['exito'])
 
         # --------------------------------------------------
-        # PASO 11: Se registra la salida y calcula permanencia
+        # PASO 11: Se exige sesión de salida activa, se registra la salida y calcula permanencia
         # --------------------------------------------------
         # Simular hora de entrada fijada a las 09:00 y salida a las 11:30
         asist_externo.hora_entrada = datetime.time(9, 0)
         asist_externo.save()
+
+        # Evento nuevo exige activación explícita de la sesión de salida antes de registrar checkout
+        res_salida_bloqueada = registrar_asistencia_salida(
+            inscripcion=insc_externo,
+            operador=self.docente,
+            hora_salida_custom=datetime.time(11, 30)
+        )
+        self.assertFalse(res_salida_bloqueada['exito'])
+        self.assertEqual(res_salida_bloqueada['codigo'], 'SALIDAS_DESHABILITADAS')
+
+        resp_ini_sal = self.client.post(
+            reverse('asistencia:iniciar_sesion_salida', kwargs={'id_evento': evento.pk}),
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(resp_ini_sal.status_code, 200)
+        self.assertTrue(resp_ini_sal.json()['exito'])
 
         res_salida = registrar_asistencia_salida(
             inscripcion=insc_externo,

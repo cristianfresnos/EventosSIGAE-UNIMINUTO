@@ -142,59 +142,90 @@ def registrar_asistencia_llegada(inscripcion, metodo=MetodoAsistencia.QR, operad
     """
     Registra de manera atómica la llegada de un participante a un evento.
     
-    Reglas de negocio aplicadas:
+    Reglas de negocio aplicadas dentro de una transacción consistente con orden de bloqueo
+    determinista (Evento -> ControlEntradaEvento -> ControlSalidaEvento -> Inscripcion):
     1. La inscripción debe existir y estar en estado ACTIVA.
     2. El evento no debe estar CANCELADO.
-    3. La sesión compartida de entrada debe estar activa (ControlEntradaEvento) en eventos
-       nuevos o que posean control de entrada; en eventos históricos sin ControlEntradaEvento
-       se preserva la compatibilidad heredada sin alterar asistencias previas.
+    3. La sesión compartida de entrada debe estar activa (ControlEntradaEvento) y sin sesión
+       de salida activa en eventos nuevos o con control inicializado; en eventos históricos
+       sin ControlEntradaEvento se preserva la compatibilidad heredada sin alterar asistencias previas.
     4. Si ya cuenta con asistencia en estado REGISTRADA: rechaza la duplicidad y retorna aviso.
     5. Si cuenta con asistencia en estado ANULADA: reactiva la asistencia a REGISTRADA (corrección autorizada).
     6. Si no cuenta con asistencia: crea la entidad Asistencia vinculada mediante OneToOne.
     7. Registra la trazabilidad completa en auditoria.Auditoria con el docente operador.
     """
-    if inscripcion.estado != EstadoInscripcion.ACTIVA:
-        return {
-            'exito': False,
-            'codigo': 'INSCRIPCION_NO_ACTIVA',
-            'mensaje': f"La inscripción se encuentra en estado '{inscripcion.get_estado_display()}'. No admite registro de asistencia.",
-            'asistencia': None,
-            'participante': inscripcion.participante,
-            'evento': inscripcion.evento,
-        }
-
-    if hasattr(inscripcion, 'evento') and inscripcion.evento and inscripcion.evento.estado == 'CANCELADO':
-        return {
-            'exito': False,
-            'codigo': 'EVENTO_CANCELADO',
-            'mensaje': "No se puede registrar entrada para un evento en estado CANCELADO.",
-            'asistencia': None,
-            'participante': inscripcion.participante,
-            'evento': inscripcion.evento,
-        }
-
-    if hasattr(inscripcion, 'evento') and inscripcion.evento:
-        if not ignorar_bloqueo_entradas and not es_entrada_habilitada(inscripcion.evento):
-            return {
-                'exito': False,
-                'codigo': 'ENTRADAS_DESHABILITADAS',
-                'mensaje': (
-                    "La sesión de registro de entrada no se encuentra activa para este evento. "
-                    "Un docente asociado debe activarla primero antes de registrar llegadas."
-                ),
-                'asistencia': None,
-                'participante': inscripcion.participante,
-                'evento': inscripcion.evento,
-            }
+    from eventos.models import Evento
+    from .models import ControlEntradaEvento, ControlSalidaEvento
 
     ahora = timezone.localtime(timezone.now()) if getattr(settings, 'USE_TZ', False) else timezone.now()
     fecha_hoy = ahora.date()
     hora_actual = ahora.time()
 
     with transaction.atomic():
-        # Bloquear fila de inscripción para evitar condiciones de carrera concurrentes
+        # Orden de bloqueo determinista para prevenir condiciones de carrera y deadlocks en PostgreSQL:
+        # 1) Evento -> 2) ControlEntradaEvento -> 3) ControlSalidaEvento -> 4) Inscripcion
+        evento_bloqueado = None
+        if inscripcion.evento_id:
+            evento_bloqueado = Evento.objects.select_for_update().get(pk=inscripcion.evento_id)
+
+        control_entrada = (
+            ControlEntradaEvento.objects.select_for_update().filter(evento_id=inscripcion.evento_id).first()
+            if inscripcion.evento_id else None
+        )
+        control_salida = (
+            ControlSalidaEvento.objects.select_for_update().filter(evento_id=inscripcion.evento_id).first()
+            if inscripcion.evento_id else None
+        )
         inscripcion_bloqueada = Inscripcion.objects.select_for_update().get(pk=inscripcion.pk)
-        
+
+        evento_ref = evento_bloqueado or inscripcion.evento
+
+        if inscripcion_bloqueada.estado != EstadoInscripcion.ACTIVA:
+            return {
+                'exito': False,
+                'codigo': 'INSCRIPCION_NO_ACTIVA',
+                'mensaje': f"La inscripción se encuentra en estado '{inscripcion_bloqueada.get_estado_display()}'. No admite registro de asistencia.",
+                'asistencia': None,
+                'participante': inscripcion.participante,
+                'evento': evento_ref,
+            }
+
+        if evento_bloqueado and evento_bloqueado.estado == 'CANCELADO':
+            return {
+                'exito': False,
+                'codigo': 'EVENTO_CANCELADO',
+                'mensaje': "No se puede registrar entrada para un evento en estado CANCELADO.",
+                'asistencia': None,
+                'participante': inscripcion.participante,
+                'evento': evento_bloqueado,
+            }
+
+        if evento_bloqueado and not ignorar_bloqueo_entradas:
+            if control_entrada is not None:
+                if not control_entrada.esta_activa:
+                    return {
+                        'exito': False,
+                        'codigo': 'ENTRADAS_DESHABILITADAS',
+                        'mensaje': (
+                            "La sesión de registro de entrada no se encuentra activa para este evento. "
+                            "Un docente asociado debe activarla primero antes de registrar llegadas."
+                        ),
+                        'asistencia': None,
+                        'participante': inscripcion.participante,
+                        'evento': evento_bloqueado,
+                    }
+                if control_salida is not None and control_salida.salidas_habilitadas and control_salida.fecha_cierre is None:
+                    return {
+                        'exito': False,
+                        'codigo': 'ENTRADAS_DESHABILITADAS',
+                        'mensaje': (
+                            "No es posible registrar llegadas mientras exista una sesión de salida activa para este evento."
+                        ),
+                        'asistencia': None,
+                        'participante': inscripcion.participante,
+                        'evento': evento_bloqueado,
+                    }
+
         # Verificar si ya existe un registro de asistencia
         asistencia = getattr(inscripcion_bloqueada, 'asistencia', None)
         if asistencia is None:
@@ -209,7 +240,7 @@ def registrar_asistencia_llegada(inscripcion, metodo=MetodoAsistencia.QR, operad
                     'mensaje': f"El participante {inscripcion.participante} ya registró su asistencia el {asistencia.fecha.strftime('%d/%m/%Y')} a las {asistencia.hora_entrada.strftime('%H:%M') if asistencia.hora_entrada else '--:--'}.",
                     'asistencia': asistencia,
                     'participante': inscripcion.participante,
-                    'evento': inscripcion.evento,
+                    'evento': evento_ref,
                 }
             elif asistencia.estado == EstadoAsistencia.ANULADA:
                 # Reactivación de asistencia previamente anulada
@@ -225,7 +256,7 @@ def registrar_asistencia_llegada(inscripcion, metodo=MetodoAsistencia.QR, operad
                     usuario=operador,
                     accion='REACTIVAR_ASISTENCIA',
                     modulo='ASISTENCIA',
-                    registro_afectado=f"Asistencia ID {asistencia.pk} reactivada - Inscripción {inscripcion.pk} - Evento {inscripcion.evento_id}",
+                    registro_afectado=f"Asistencia ID {asistencia.pk} reactivada - Inscripción {inscripcion.pk} - Evento {inscripcion.evento_id}"[:100],
                     ip=ip
                 )
 
@@ -235,7 +266,7 @@ def registrar_asistencia_llegada(inscripcion, metodo=MetodoAsistencia.QR, operad
                     'mensaje': f"Asistencia reactivada exitosamente para {inscripcion.participante}.",
                     'asistencia': asistencia,
                     'participante': inscripcion.participante,
-                    'evento': inscripcion.evento,
+                    'evento': evento_ref,
                 }
 
         # Creación de nuevo registro de asistencia
@@ -257,14 +288,14 @@ def registrar_asistencia_llegada(inscripcion, metodo=MetodoAsistencia.QR, operad
                 'mensaje': f"Asistencia ya registrada concurrentemente para {inscripcion.participante}.",
                 'asistencia': asistencia_concurrente,
                 'participante': inscripcion.participante,
-                'evento': inscripcion.evento,
+                'evento': evento_ref,
             }
 
         Auditoria.objects.create(
             usuario=operador,
             accion='REGISTRAR_ASISTENCIA',
             modulo='ASISTENCIA',
-            registro_afectado=f"Asistencia ID {nueva_asistencia.pk} ({metodo}) - Inscripción {inscripcion.pk} - Evento {inscripcion.evento_id}",
+            registro_afectado=f"Asistencia ID {nueva_asistencia.pk} ({metodo}) - Inscripción {inscripcion.pk} - Evento {inscripcion.evento_id}"[:100],
             ip=ip
         )
 
@@ -274,7 +305,7 @@ def registrar_asistencia_llegada(inscripcion, metodo=MetodoAsistencia.QR, operad
             'mensaje': f"¡Asistencia registrada con éxito para {inscripcion.participante}!",
             'asistencia': nueva_asistencia,
             'participante': inscripcion.participante,
-            'evento': inscripcion.evento,
+            'evento': evento_ref,
         }
 
 
@@ -282,10 +313,13 @@ def registrar_asistencia_salida(inscripcion, metodo=MetodoAsistencia.QR, operado
     """
     Registra de manera atómica la salida (checkout) de un participante y calcula su permanencia.
 
-    Reglas de negocio aplicadas:
+    Reglas de negocio aplicadas dentro de una transacción consistente con orden de bloqueo
+    determinista (Evento -> ControlEntradaEvento -> ControlSalidaEvento -> Inscripcion):
     1. La inscripción debe existir y estar en estado ACTIVA.
     2. El evento asociado no debe estar en estado CANCELADO.
-    3. El registro de salidas del evento debe estar habilitado (salvo que el operador fuerce ignorar_bloqueo_salidas).
+    3. El registro de salidas del evento debe estar habilitado y sin sesión de entrada activa
+       (salvo que el operador fuerce ignorar_bloqueo_salidas; en eventos históricos sin
+       ControlSalidaEvento se preserva la compatibilidad heredada).
     4. Debe existir una Asistencia previa en estado REGISTRADA con hora_entrada.
        Si no existe entrada previa o está anulada, rechaza la salida.
     5. Si ya cuenta con hora_salida registrada y forzar_actualizacion es False:
@@ -294,45 +328,74 @@ def registrar_asistencia_salida(inscripcion, metodo=MetodoAsistencia.QR, operado
     7. Calcula el tiempo efectivo de permanencia (horas y minutos).
     8. Registra la auditoría correspondiente con la permanencia calculada.
     """
-    if inscripcion.estado != EstadoInscripcion.ACTIVA:
-        return {
-            'exito': False,
-            'codigo': 'INSCRIPCION_NO_ACTIVA',
-            'mensaje': f"La inscripción se encuentra en estado '{inscripcion.get_estado_display()}'. No admite registro de salida.",
-            'asistencia': None,
-            'permanencia': None,
-            'participante': inscripcion.participante,
-            'evento': inscripcion.evento,
-        }
-
-    if hasattr(inscripcion, 'evento') and inscripcion.evento and inscripcion.evento.estado == 'CANCELADO':
-        return {
-            'exito': False,
-            'codigo': 'EVENTO_CANCELADO',
-            'mensaje': "No se puede registrar salida para un evento en estado CANCELADO.",
-            'asistencia': None,
-            'permanencia': None,
-            'participante': inscripcion.participante,
-            'evento': inscripcion.evento,
-        }
-
-    if hasattr(inscripcion, 'evento') and inscripcion.evento:
-        if not ignorar_bloqueo_salidas and not es_salida_habilitada(inscripcion.evento):
-            return {
-                'exito': False,
-                'codigo': 'SALIDAS_DESHABILITADAS',
-                'mensaje': "El registro de salidas para este evento se encuentra cerrado o no ha sido habilitado por el organizador.",
-                'asistencia': None,
-                'permanencia': None,
-                'participante': inscripcion.participante,
-                'evento': inscripcion.evento,
-            }
+    from eventos.models import Evento
+    from .models import ControlEntradaEvento, ControlSalidaEvento
 
     ahora = timezone.localtime(timezone.now()) if getattr(settings, 'USE_TZ', False) else timezone.now()
     hora_actual = hora_salida_custom or ahora.time()
 
     with transaction.atomic():
+        # Orden de bloqueo determinista para prevenir condiciones de carrera y deadlocks en PostgreSQL:
+        # 1) Evento -> 2) ControlEntradaEvento -> 3) ControlSalidaEvento -> 4) Inscripcion
+        evento_bloqueado = None
+        if inscripcion.evento_id:
+            evento_bloqueado = Evento.objects.select_for_update().get(pk=inscripcion.evento_id)
+
+        control_entrada = (
+            ControlEntradaEvento.objects.select_for_update().filter(evento_id=inscripcion.evento_id).first()
+            if inscripcion.evento_id else None
+        )
+        control_salida = (
+            ControlSalidaEvento.objects.select_for_update().filter(evento_id=inscripcion.evento_id).first()
+            if inscripcion.evento_id else None
+        )
         inscripcion_bloqueada = Inscripcion.objects.select_for_update().get(pk=inscripcion.pk)
+
+        evento_ref = evento_bloqueado or inscripcion.evento
+
+        if inscripcion_bloqueada.estado != EstadoInscripcion.ACTIVA:
+            return {
+                'exito': False,
+                'codigo': 'INSCRIPCION_NO_ACTIVA',
+                'mensaje': f"La inscripción se encuentra en estado '{inscripcion_bloqueada.get_estado_display()}'. No admite registro de salida.",
+                'asistencia': None,
+                'permanencia': None,
+                'participante': inscripcion.participante,
+                'evento': evento_ref,
+            }
+
+        if evento_bloqueado and evento_bloqueado.estado == 'CANCELADO':
+            return {
+                'exito': False,
+                'codigo': 'EVENTO_CANCELADO',
+                'mensaje': "No se puede registrar salida para un evento en estado CANCELADO.",
+                'asistencia': None,
+                'permanencia': None,
+                'participante': inscripcion.participante,
+                'evento': evento_bloqueado,
+            }
+
+        if evento_bloqueado and not ignorar_bloqueo_salidas:
+            if control_entrada is not None and control_entrada.esta_activa:
+                return {
+                    'exito': False,
+                    'codigo': 'SALIDAS_DESHABILITADAS',
+                    'mensaje': "El registro de salidas no está disponible mientras la sesión de entrada continúe activa.",
+                    'asistencia': None,
+                    'permanencia': None,
+                    'participante': inscripcion.participante,
+                    'evento': evento_bloqueado,
+                }
+            if control_salida is not None and not (control_salida.salidas_habilitadas and control_salida.fecha_cierre is None):
+                return {
+                    'exito': False,
+                    'codigo': 'SALIDAS_DESHABILITADAS',
+                    'mensaje': "El registro de salidas para este evento se encuentra cerrado o no ha sido habilitado por el organizador.",
+                    'asistencia': None,
+                    'permanencia': None,
+                    'participante': inscripcion.participante,
+                    'evento': evento_bloqueado,
+                }
 
         asistencia = getattr(inscripcion_bloqueada, 'asistencia', None)
         if asistencia is None:
@@ -346,7 +409,7 @@ def registrar_asistencia_salida(inscripcion, metodo=MetodoAsistencia.QR, operado
                 'asistencia': None,
                 'permanencia': None,
                 'participante': inscripcion.participante,
-                'evento': inscripcion.evento,
+                'evento': evento_ref,
             }
 
         if not asistencia.hora_entrada:
@@ -357,7 +420,7 @@ def registrar_asistencia_salida(inscripcion, metodo=MetodoAsistencia.QR, operado
                 'asistencia': asistencia,
                 'permanencia': None,
                 'participante': inscripcion.participante,
-                'evento': inscripcion.evento,
+                'evento': evento_ref,
             }
 
         if asistencia.hora_salida and not forzar_actualizacion:
@@ -370,7 +433,7 @@ def registrar_asistencia_salida(inscripcion, metodo=MetodoAsistencia.QR, operado
                 'asistencia': asistencia,
                 'permanencia': perm,
                 'participante': inscripcion.participante,
-                'evento': inscripcion.evento,
+                'evento': evento_ref,
             }
 
         asistencia.hora_salida = hora_actual
@@ -388,7 +451,7 @@ def registrar_asistencia_salida(inscripcion, metodo=MetodoAsistencia.QR, operado
                 'asistencia': asistencia,
                 'permanencia': None,
                 'participante': inscripcion.participante,
-                'evento': inscripcion.evento,
+                'evento': evento_ref,
             }
 
         asistencia.save()
@@ -399,7 +462,7 @@ def registrar_asistencia_salida(inscripcion, metodo=MetodoAsistencia.QR, operado
             usuario=operador,
             accion='REGISTRAR_SALIDA_ASISTENCIA',
             modulo='ASISTENCIA',
-            registro_afectado=f"Salida Asistencia ID {asistencia.pk} ({metodo}) - Inscripción {inscripcion.pk} - Permanencia: {texto_perm}",
+            registro_afectado=f"Salida Asistencia ID {asistencia.pk} ({metodo}) - Inscripción {inscripcion.pk} - Permanencia: {texto_perm}"[:100],
             ip=ip
         )
 
@@ -410,8 +473,29 @@ def registrar_asistencia_salida(inscripcion, metodo=MetodoAsistencia.QR, operado
             'asistencia': asistencia,
             'permanencia': perm,
             'participante': inscripcion.participante,
-            'evento': inscripcion.evento,
+            'evento': evento_ref,
         }
+
+
+def inicializar_controles_sesiones_evento(evento):
+    """
+    Inicializa de forma idempotente y transaccional los controles compartidos de entrada
+    y salida de un evento recién creado, ambos en estado cerrado/inactivo:
+    - ControlEntradaEvento(entradas_habilitadas=False)
+    - ControlSalidaEvento(salidas_habilitadas=False)
+    """
+    from .models import ControlEntradaEvento, ControlSalidaEvento
+
+    with transaction.atomic():
+        control_entrada, _ = ControlEntradaEvento.objects.get_or_create(
+            evento=evento,
+            defaults={'entradas_habilitadas': False},
+        )
+        control_salida, _ = ControlSalidaEvento.objects.get_or_create(
+            evento=evento,
+            defaults={'salidas_habilitadas': False},
+        )
+        return control_entrada, control_salida
 
 
 def es_salida_habilitada(evento):
@@ -508,9 +592,13 @@ def iniciar_sesion_entrada_service(evento, operador=None, ip=None):
     from .models import ControlEntradaEvento, ControlSalidaEvento
 
     with transaction.atomic():
-        # Bloqueo pesimista sobre el evento para serializar operaciones concurrentes entre docentes
+        # Orden de bloqueo determinista: Evento -> ControlEntradaEvento -> ControlSalidaEvento
         Evento.objects.select_for_update().get(pk=evento.pk)
 
+        control, _ = ControlEntradaEvento.objects.select_for_update().get_or_create(
+            evento=evento,
+            defaults={'entradas_habilitadas': False}
+        )
         control_salida = ControlSalidaEvento.objects.select_for_update().filter(evento=evento).first()
         if control_salida and control_salida.salidas_habilitadas and control_salida.fecha_cierre is None:
             quien = _nombre_operador(control_salida.habilitado_por)
@@ -520,10 +608,6 @@ def iniciar_sesion_entrada_service(evento, operador=None, ip=None):
                 code='SESION_SALIDA_ACTIVA_INCOMPATIBLE',
             )
 
-        control, _ = ControlEntradaEvento.objects.select_for_update().get_or_create(
-            evento=evento,
-            defaults={'entradas_habilitadas': False}
-        )
         if control.esta_activa:
             quien = _nombre_operador(control.habilitado_por)
             hora = timezone.localtime(control.fecha_habilitacion).strftime('%H:%M') if control.fecha_habilitacion else ''
@@ -681,14 +765,15 @@ def toggle_salidas_evento_service(evento, habilitar=None, operador=None, ip=None
     from eventos.models import Evento
     from .models import ControlEntradaEvento, ControlSalidaEvento
     with transaction.atomic():
+        # Orden de bloqueo determinista: Evento -> ControlEntradaEvento -> ControlSalidaEvento
         Evento.objects.select_for_update().get(pk=evento.pk)
+        control_entrada = ControlEntradaEvento.objects.select_for_update().filter(evento=evento).first()
         control, _ = ControlSalidaEvento.objects.select_for_update().get_or_create(
             evento=evento,
             defaults={'salidas_habilitadas': False}
         )
         nuevo_estado = (not control.salidas_habilitadas) if habilitar is None else bool(habilitar)
         if nuevo_estado:
-            control_entrada = ControlEntradaEvento.objects.select_for_update().filter(evento=evento).first()
             if control_entrada and control_entrada.esta_activa:
                 quien = _nombre_operador(control_entrada.habilitado_por)
                 raise ValidationError(

@@ -9,9 +9,10 @@ import datetime
 import time
 from unittest.mock import patch
 
+from django.contrib.admin.sites import AdminSite
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
-from django.test import TestCase, Client, override_settings
+from django.test import TestCase, Client, RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -28,12 +29,17 @@ from asistencia.services import (
     generar_token_salida_evento,
     validar_token_salida_evento,
     registrar_asistencia_llegada,
+    registrar_asistencia_salida,
+    inicializar_controles_sesiones_evento,
     iniciar_sesion_entrada_service,
     cerrar_sesion_entrada_service,
     iniciar_sesion_salida_service,
     cerrar_sesion_salida_service,
     es_entrada_habilitada,
+    es_salida_habilitada,
+    obtener_estado_sesiones_evento,
 )
+from eventos.admin import EventoAdmin
 from eventos.models import (
     CategoriaEvento,
     Evento,
@@ -45,6 +51,8 @@ from eventos.models import (
 )
 from eventos.permissions import (
     puede_gestionar_evento,
+    puede_editar_evento,
+    puede_cancelar_evento,
     puede_asignar_docentes,
     obtener_eventos_gestionables,
     asignar_docente_evento_service,
@@ -546,3 +554,384 @@ class SesionesCompartidasYConcurrenciaTests(DocentesAsociadosBaseTestCase):
         self.assertEqual(resp_f.status_code, 200)
         self.assertContains(resp_f, 'Mateo')
         self.assertNotContains(resp_f, 'Sofía')
+
+
+@override_settings(PASSWORD_HASHERS=FAST_HASHERS)
+class CorreccionesAuditoriaPredespliegueTests(DocentesAsociadosBaseTestCase):
+    """Pruebas específicas para las 4 correcciones de auditoría predespliegue."""
+
+    def test_12_correccion1_crear_evento_y_admin_inicializan_entrada_y_salida_cerradas(self):
+        """
+        Corrección 1: crear_evento y EventoAdmin.save_model inicializan de forma idempotente y
+        transaccional ControlEntradaEvento(False) y ControlSalidaEvento(False). Impide salida
+        antes de activación formal y conserva compatibilidad histórica para eventos sin control.
+        """
+        # A) Creación mediante vista eventos:crear
+        self.client.force_login(self.coordinador)
+        resp_crear = self.client.post(reverse('eventos:crear'), {
+            'nombre': 'Evento Nuevo Doble Control Cerrado',
+            'descripcion': 'Debe nacer con entrada y salida formalmente inactivas.',
+            'fecha': timezone.localdate().isoformat(),
+            'hora_inicio': '08:00',
+            'hora_fin': '12:00',
+            'lugar': 'Auditorio Central',
+            'modalidad': ModalidadEvento.PRESENCIAL,
+            'modalidad_inscripcion': ModalidadInscripcion.ABIERTA,
+            'cupo': 40,
+            'estado': EstadoEvento.PUBLICADO,
+            'categoria': self.categoria.pk,
+        })
+        self.assertEqual(resp_crear.status_code, 302)
+
+        ev_vista = Evento.objects.get(nombre='Evento Nuevo Doble Control Cerrado')
+        ctrl_ent = ControlEntradaEvento.objects.filter(evento=ev_vista).first()
+        ctrl_sal = ControlSalidaEvento.objects.filter(evento=ev_vista).first()
+        self.assertIsNotNone(ctrl_ent)
+        self.assertIsNotNone(ctrl_sal)
+        self.assertFalse(ctrl_ent.entradas_habilitadas)
+        self.assertFalse(ctrl_sal.salidas_habilitadas)
+        self.assertFalse(es_entrada_habilitada(ev_vista))
+        self.assertFalse(es_salida_habilitada(ev_vista))
+        estado = obtener_estado_sesiones_evento(ev_vista)
+        self.assertEqual(estado['sesion_activa_tipo'], 'NINGUNA')
+        self.assertFalse(estado['entradas_permitidas'])
+        self.assertFalse(estado['salidas_permitidas'])
+
+        # Idempotencia de inicializar_controles_sesiones_evento sin duplicados
+        c_ent_2, c_sal_2 = inicializar_controles_sesiones_evento(ev_vista)
+        self.assertEqual(c_ent_2.pk, ctrl_ent.pk)
+        self.assertEqual(c_sal_2.pk, ctrl_sal.pk)
+        self.assertEqual(ControlEntradaEvento.objects.filter(evento=ev_vista).count(), 1)
+        self.assertEqual(ControlSalidaEvento.objects.filter(evento=ev_vista).count(), 1)
+
+        # Inscripción + llegada activada -> salida bloqueada mientras entrada está activa y tras cerrarla
+        insc = Inscripcion.objects.create(evento=ev_vista, participante=self.part_est, estado=EstadoInscripcion.ACTIVA)
+        iniciar_sesion_entrada_service(ev_vista, operador=self.coordinador)
+        res_in = registrar_asistencia_llegada(insc, metodo=MetodoAsistencia.QR, operador=self.coordinador)
+        self.assertTrue(res_in['exito'])
+        res_in['asistencia'].hora_entrada = datetime.time(8, 30)
+        res_in['asistencia'].save(update_fields=['hora_entrada'])
+
+        # Mientras entrada está activa no permite registrar salida ni iniciar sesión de salida
+        res_out_con_entrada = registrar_asistencia_salida(insc, operador=self.coordinador, hora_salida_custom=datetime.time(10, 0))
+        self.assertFalse(res_out_con_entrada['exito'])
+        self.assertEqual(res_out_con_entrada['codigo'], 'SALIDAS_DESHABILITADAS')
+        with self.assertRaises(ValidationError):
+            iniciar_sesion_salida_service(ev_vista, operador=self.coordinador)
+
+        # Tras cerrar entrada pero SIN activar salida, la salida sigue bloqueada
+        cerrar_sesion_entrada_service(ev_vista, operador=self.coordinador)
+        res_out_sin_activar = registrar_asistencia_salida(insc, operador=self.coordinador, hora_salida_custom=datetime.time(10, 0))
+        self.assertFalse(res_out_sin_activar['exito'])
+        self.assertEqual(res_out_sin_activar['codigo'], 'SALIDAS_DESHABILITADAS')
+
+        # Al activar formalmente salida, ahora sí permite salida y bloquea reabrir entrada
+        iniciar_sesion_salida_service(ev_vista, operador=self.coordinador)
+        with self.assertRaises(ValidationError):
+            iniciar_sesion_entrada_service(ev_vista, operador=self.coordinador)
+        res_out_ok = registrar_asistencia_salida(insc, operador=self.coordinador, hora_salida_custom=datetime.time(10, 0))
+        self.assertTrue(res_out_ok['exito'])
+
+        # B) Creación mediante Django Admin (EventoAdmin.save_model)
+        rf = RequestFactory()
+        req = rf.post('/admin/eventos/evento/add/')
+        req.user = self.admin
+        ev_admin_obj = Evento(
+            nombre='Evento Nuevo Desde Admin',
+            descripcion='Creado vía EventoAdmin.save_model.',
+            fecha=timezone.localdate(),
+            hora_inicio=datetime.time(14, 0),
+            hora_fin=datetime.time(16, 0),
+            lugar='Sala Admin',
+            modalidad=ModalidadEvento.PRESENCIAL,
+            categoria=self.categoria,
+            organizador=self.admin,
+            estado=EstadoEvento.PUBLICADO,
+        )
+        evento_admin = EventoAdmin(Evento, AdminSite())
+        evento_admin.save_model(req, ev_admin_obj, form=None, change=False)
+
+        ctrl_ent_adm = ControlEntradaEvento.objects.filter(evento=ev_admin_obj).first()
+        ctrl_sal_adm = ControlSalidaEvento.objects.filter(evento=ev_admin_obj).first()
+        self.assertIsNotNone(ctrl_ent_adm)
+        self.assertIsNotNone(ctrl_sal_adm)
+        self.assertFalse(ctrl_ent_adm.entradas_habilitadas)
+        self.assertFalse(ctrl_sal_adm.salidas_habilitadas)
+
+        # C) Compatibilidad histórica: evento previo sin controles mantiene entradas y salidas operativas
+        ev_hist = Evento.objects.create(
+            nombre='Evento Histórico Sin Controles',
+            descripcion='Simula evento anterior al despliegue.',
+            fecha=datetime.date(2026, 9, 15),
+            hora_inicio=datetime.time(9, 0),
+            hora_fin=datetime.time(11, 0),
+            lugar='Bloque A',
+            modalidad=ModalidadEvento.PRESENCIAL,
+            categoria=self.categoria,
+            organizador=self.monica,
+            estado=EstadoEvento.PUBLICADO,
+        )
+        # Editar evento histórico vía EventoAdmin(change=True) NO crea controles retroactivos
+        evento_admin.save_model(req, ev_hist, form=None, change=True)
+        self.assertFalse(ControlEntradaEvento.objects.filter(evento=ev_hist).exists())
+        self.assertFalse(ControlSalidaEvento.objects.filter(evento=ev_hist).exists())
+        self.assertTrue(es_entrada_habilitada(ev_hist))
+        self.assertTrue(es_salida_habilitada(ev_hist))
+
+        insc_hist = Inscripcion.objects.create(evento=ev_hist, participante=self.part_est, estado=EstadoInscripcion.ACTIVA)
+        r_hist_in = registrar_asistencia_llegada(insc_hist, operador=self.monica)
+        self.assertTrue(r_hist_in['exito'])
+        r_hist_in['asistencia'].hora_entrada = datetime.time(9, 5)
+        r_hist_in['asistencia'].save(update_fields=['hora_entrada'])
+        r_hist_out = registrar_asistencia_salida(insc_hist, operador=self.monica, hora_salida_custom=datetime.time(10, 45))
+        self.assertTrue(r_hist_out['exito'])
+
+    def test_13_correccion2_separacion_permisos_estructurales_vs_operativos(self):
+        """
+        Corrección 2: valida la matriz completa de permisos estructurales (editar/cancelar) vs.
+        operativos para 2 docentes asociados, 1 docente no asociado, organizador, coordinador,
+        administrador y estudiante.
+        """
+        # Evento 1: organizado por self.coordinador; Mónica y Alexander son docentes asociados NO organizadores
+        # Evento 2: organizado por Mónica (docente organizadora), con Alexander asociado
+        evento_org_monica = Evento.objects.create(
+            nombre='Taller Organizado por Mónica',
+            descripcion='Mónica es organizadora, Alexander es docente asociado.',
+            fecha=timezone.localdate(),
+            hora_inicio=datetime.time(14, 0),
+            hora_fin=datetime.time(16, 0),
+            lugar='Lab 204',
+            modalidad=ModalidadEvento.PRESENCIAL,
+            categoria=self.categoria,
+            organizador=self.monica,
+            estado=EstadoEvento.PUBLICADO,
+        )
+        inicializar_controles_sesiones_evento(evento_org_monica)
+        asignar_docente_evento_service(evento_org_monica, self.alexander, self.coordinador)
+
+        # 1. Validación directa en capa de servicios de permisos (eventos/permissions.py)
+        # Sobre self.evento (organizador = coordinador):
+        self.assertTrue(puede_editar_evento(self.admin, self.evento))
+        self.assertTrue(puede_cancelar_evento(self.admin, self.evento))
+        self.assertTrue(puede_editar_evento(self.coordinador, self.evento))
+        self.assertTrue(puede_cancelar_evento(self.coordinador, self.evento))
+        # Dos docentes asociados NO organizadores: sí operan, NO editan ni cancelan
+        for docente_asoc in [self.monica, self.alexander]:
+            self.assertTrue(puede_gestionar_evento(docente_asoc, self.evento))
+            self.assertFalse(puede_editar_evento(docente_asoc, self.evento))
+            self.assertFalse(puede_cancelar_evento(docente_asoc, self.evento))
+        # Docente no asociado y estudiante: nada permitido
+        for no_auth in [self.docente_ajeno, self.estudiante]:
+            self.assertFalse(puede_gestionar_evento(no_auth, self.evento))
+            self.assertFalse(puede_editar_evento(no_auth, self.evento))
+            self.assertFalse(puede_cancelar_evento(no_auth, self.evento))
+
+        # Sobre evento_org_monica (organizador = Mónica):
+        self.assertTrue(puede_editar_evento(self.monica, evento_org_monica))
+        self.assertTrue(puede_cancelar_evento(self.monica, evento_org_monica))
+        self.assertTrue(puede_editar_evento(self.coordinador, evento_org_monica))
+        self.assertTrue(puede_editar_evento(self.admin, evento_org_monica))
+        self.assertTrue(puede_gestionar_evento(self.alexander, evento_org_monica))
+        self.assertFalse(puede_editar_evento(self.alexander, evento_org_monica))
+        self.assertFalse(puede_cancelar_evento(self.alexander, evento_org_monica))
+
+        # 2. Validación estricta en backend (HTTP 403 en GET y POST) y UI para docentes asociados no organizadores
+        url_edit_1 = reverse('eventos:editar', kwargs={'id_evento': self.evento.pk})
+        url_canc_1 = reverse('eventos:cancelar', kwargs={'id_evento': self.evento.pk})
+
+        for docente_asoc in [self.monica, self.alexander]:
+            self.client.force_login(docente_asoc)
+            # Backend bloquea editar y cancelar con 403 (GET y POST)
+            self.assertEqual(self.client.get(url_edit_1).status_code, 403)
+            self.assertEqual(self.client.post(url_edit_1, {'nombre': 'Intento No Autorizado'}).status_code, 403)
+            self.assertEqual(self.client.get(url_canc_1).status_code, 403)
+            self.assertEqual(self.client.post(url_canc_1, {'motivo_cancelacion': 'No autorizado'}).status_code, 403)
+
+            # UI oculta botones Editar y Cancelar pero conserva controles operativos
+            resp_det = self.client.get(reverse('eventos:detalle', kwargs={'id_evento': self.evento.pk}))
+            self.assertEqual(resp_det.status_code, 200)
+            self.assertNotContains(resp_det, url_edit_1)
+            self.assertNotContains(resp_det, url_canc_1)
+            self.assertContains(resp_det, reverse('asistencia:control_asistencia', kwargs={'id_evento': self.evento.pk}))
+
+            resp_mis = self.client.get(reverse('eventos:mis_eventos'))
+            self.assertEqual(resp_mis.status_code, 200)
+            self.assertNotContains(resp_mis, url_edit_1)
+            self.assertNotContains(resp_mis, url_canc_1)
+
+        # Docente NO asociado y Estudiante reciben 403 en backend
+        for usuario_bloqueado in [self.docente_ajeno, self.estudiante]:
+            self.client.force_login(usuario_bloqueado)
+            self.assertEqual(self.client.get(url_edit_1).status_code, 403)
+            self.assertEqual(self.client.get(url_canc_1).status_code, 403)
+
+        # 3. Administrador, Coordinador y Organizador SÍ acceden a editar y cancelar
+        url_edit_2 = reverse('eventos:editar', kwargs={'id_evento': evento_org_monica.pk})
+        url_canc_2 = reverse('eventos:cancelar', kwargs={'id_evento': evento_org_monica.pk})
+
+        for autorizado in [self.admin, self.coordinador, self.monica]:
+            self.client.force_login(autorizado)
+            self.assertEqual(self.client.get(url_edit_2).status_code, 200)
+            self.assertEqual(self.client.get(url_canc_2).status_code, 200)
+            resp_det_auth = self.client.get(reverse('eventos:detalle', kwargs={'id_evento': evento_org_monica.pk}))
+            self.assertContains(resp_det_auth, url_edit_2)
+            self.assertContains(resp_det_auth, url_canc_2)
+
+        # Organizador (Mónica) cancela exitosamente su propio evento
+        self.client.force_login(self.monica)
+        resp_canc_ok = self.client.post(url_canc_2, {'motivo_cancelacion': 'Reprogramación académica institucional'})
+        self.assertEqual(resp_canc_ok.status_code, 302)
+        evento_org_monica.refresh_from_db()
+        self.assertEqual(evento_org_monica.estado, EstadoEvento.CANCELADO)
+
+    def test_14_correccion3_auditoria_registro_afectado_nunca_supera_100_caracteres(self):
+        """
+        Corrección 3: garantiza que Auditoria.registro_afectado (y accion/modulo) nunca superen
+        100 caracteres en escritura directa, reportes PDF con nombres largos y flujos de asistencia.
+        """
+        # 1. Protección centralizada en Auditoria.save()
+        log_largo = Auditoria.objects.create(
+            usuario=self.admin,
+            accion='ACCION_EXTREMADAMENTE_LARGA_' + ('X' * 120),
+            modulo='MODULO_EXTREMADAMENTE_LARGO_' + ('Y' * 120),
+            registro_afectado='Evento con descripción desbordada ' + ('Z' * 200),
+            ip='127.0.0.1',
+        )
+        log_largo.refresh_from_db()
+        self.assertEqual(len(log_largo.registro_afectado), 100)
+        self.assertEqual(len(log_largo.accion), 100)
+        self.assertEqual(len(log_largo.modulo), 100)
+
+        # 2. Flujo de reportes PDF con evento de nombre de 190 caracteres
+        nombre_190 = 'Congreso Internacional de Ingeniería, Ciencia de Datos y Transformación Digital Universitaria UNIMINUTO ' + ('A' * 86)
+        self.assertEqual(len(nombre_190), 190)
+        ev_largo = Evento.objects.create(
+            nombre=nombre_190,
+            descripcion='Prueba de truncamiento de auditoría en PDF.',
+            fecha=timezone.localdate(),
+            hora_inicio=datetime.time(8, 0),
+            hora_fin=datetime.time(12, 0),
+            lugar='Auditorio',
+            modalidad=ModalidadEvento.PRESENCIAL,
+            categoria=self.categoria,
+            organizador=self.coordinador,
+            estado=EstadoEvento.PUBLICADO,
+        )
+        asignar_docente_evento_service(ev_largo, self.monica, self.coordinador)
+
+        Auditoria.objects.all().delete()
+        self.client.force_login(self.monica)
+        resp_plan = self.client.get(reverse('reportes:planilla_asistencia_pdf', kwargs={'id_evento': ev_largo.pk}))
+        resp_rep = self.client.get(reverse('reportes:reporte_consolidado_pdf', kwargs={'id_evento': ev_largo.pk}))
+        self.assertEqual(resp_plan.status_code, 200)
+        self.assertEqual(resp_rep.status_code, 200)
+
+        logs_rep = list(Auditoria.objects.filter(modulo='REPORTES'))
+        self.assertEqual(len(logs_rep), 2)
+        for lg in logs_rep:
+            self.assertLessEqual(len(lg.registro_afectado), 100)
+
+    def test_15_correccion4_integridad_transaccional_y_orden_bloqueo_determinista(self):
+        """
+        Corrección 4: valida que registrar_asistencia_llegada y registrar_asistencia_salida
+        verifiquen el estado de sesiones dentro de transaction.atomic() usando select_for_update()
+        en orden determinista (Evento -> ControlEntradaEvento -> ControlSalidaEvento -> Inscripcion),
+        evitando carreras entre cierre de sesión y registro de asistencia.
+        """
+        from django.db.models.query import QuerySet
+
+        # Preparar evento nuevo con ambos controles cerrados
+        ev_tx = Evento.objects.create(
+            nombre='Evento Prueba Transaccional',
+            descripcion='Validación de orden determinista de bloqueos.',
+            fecha=timezone.localdate(),
+            hora_inicio=datetime.time(8, 0),
+            hora_fin=datetime.time(12, 0),
+            lugar='Sala 402',
+            modalidad=ModalidadEvento.PRESENCIAL,
+            categoria=self.categoria,
+            organizador=self.coordinador,
+            estado=EstadoEvento.PUBLICADO,
+        )
+        inicializar_controles_sesiones_evento(ev_tx)
+        insc_tx = Inscripcion.objects.create(evento=ev_tx, participante=self.part_est, estado=EstadoInscripcion.ACTIVA)
+
+        # 1. Activar entrada y registrar orden real de modelos bloqueados con select_for_update()
+        iniciar_sesion_entrada_service(ev_tx, operador=self.monica)
+        modelos_bloqueados_llegada = []
+        original_sfu = QuerySet.select_for_update
+
+        def tracked_sfu(qs_self, *args, **kwargs):
+            modelos_bloqueados_llegada.append(qs_self.model.__name__)
+            return original_sfu(qs_self, *args, **kwargs)
+
+        with patch.object(QuerySet, 'select_for_update', new=tracked_sfu):
+            res_in = registrar_asistencia_llegada(insc_tx, metodo=MetodoAsistencia.QR, operador=self.alexander)
+
+        self.assertTrue(res_in['exito'])
+        self.assertEqual(
+            modelos_bloqueados_llegada,
+            ['Evento', 'ControlEntradaEvento', 'ControlSalidaEvento', 'Inscripcion'],
+        )
+
+        # 2. Simular carrera: docente Mónica cierra sesión de entrada mientras otro docente intenta registrar entrada
+        cerrar_sesion_entrada_service(ev_tx, operador=self.monica)
+        est2 = Usuario.objects.create_user(
+            username='est_race',
+            email='est_race@uniminuto.edu.co',
+            password='Password123*',
+            documento='80000199',
+            nombres='Laura',
+            apellidos='Carrera',
+            rol=self.rol_estudiante,
+        )
+        part2 = Participante.objects.create(
+            usuario=est2,
+            tipo=TipoParticipante.ESTUDIANTE,
+            documento=est2.documento,
+            nombres=est2.nombres,
+            apellidos=est2.apellidos,
+            correo=est2.email,
+        )
+        insc_tx_2 = Inscripcion.objects.create(evento=ev_tx, participante=part2, estado=EstadoInscripcion.ACTIVA)
+        res_in_cerrada = registrar_asistencia_llegada(insc_tx_2, metodo=MetodoAsistencia.QR, operador=self.alexander)
+        self.assertFalse(res_in_cerrada['exito'])
+        self.assertEqual(res_in_cerrada['codigo'], 'ENTRADAS_DESHABILITADAS')
+        self.assertFalse(Asistencia.objects.filter(inscripcion=insc_tx_2).exists())
+
+        # 3. Activar salida y verificar orden determinista idéntico en registrar_asistencia_salida
+        res_in['asistencia'].hora_entrada = datetime.time(8, 15)
+        res_in['asistencia'].save(update_fields=['hora_entrada'])
+        iniciar_sesion_salida_service(ev_tx, operador=self.alexander)
+
+        modelos_bloqueados_salida = []
+
+        def tracked_sfu_salida(qs_self, *args, **kwargs):
+            modelos_bloqueados_salida.append(qs_self.model.__name__)
+            return original_sfu(qs_self, *args, **kwargs)
+
+        with patch.object(QuerySet, 'select_for_update', new=tracked_sfu_salida):
+            res_out = registrar_asistencia_salida(
+                insc_tx,
+                metodo=MetodoAsistencia.QR,
+                operador=self.monica,
+                hora_salida_custom=datetime.time(10, 30),
+            )
+
+        self.assertTrue(res_out['exito'])
+        self.assertEqual(
+            modelos_bloqueados_salida,
+            ['Evento', 'ControlEntradaEvento', 'ControlSalidaEvento', 'Inscripcion'],
+        )
+
+        # 4. Tras cerrar salida, intento de salida (incluso forzar_actualizacion=True) se rechaza dentro de transacción
+        cerrar_sesion_salida_service(ev_tx, operador=self.carlos)
+        res_out_cerrada = registrar_asistencia_salida(
+            insc_tx,
+            metodo=MetodoAsistencia.QR,
+            operador=self.monica,
+            forzar_actualizacion=True,
+            hora_salida_custom=datetime.time(11, 0),
+        )
+        self.assertFalse(res_out_cerrada['exito'])
+        self.assertEqual(res_out_cerrada['codigo'], 'SALIDAS_DESHABILITADAS')

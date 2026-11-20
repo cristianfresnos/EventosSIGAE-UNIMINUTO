@@ -2,6 +2,7 @@ import json
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.http import JsonResponse
 from django.urls import reverse
@@ -12,12 +13,18 @@ from auditoria.models import Auditoria
 from usuarios.models import Usuario
 from participantes.models import Inscripcion, EstadoInscripcion
 from asistencia.models import Asistencia, EstadoAsistencia, ControlEntradaEvento, ControlSalidaEvento
-from asistencia.services import es_salida_habilitada, obtener_estado_sesiones_evento
+from asistencia.services import (
+    es_salida_habilitada,
+    obtener_estado_sesiones_evento,
+    inicializar_controles_sesiones_evento,
+)
 from .models import Evento, CategoriaEvento, ModalidadEvento, EstadoEvento, CalificacionEvento, DocenteEvento
 from .forms import EventoForm
 from .permissions import (
     es_admin_o_coordinador,
     puede_gestionar_evento,
+    puede_editar_evento,
+    puede_cancelar_evento,
     puede_asignar_docentes,
     obtener_eventos_gestionables,
     obtener_docentes_asociados_evento,
@@ -144,8 +151,10 @@ def detalle_evento(request, id_evento):
             .first()
         )
 
-    # Verificar permisos de gestión sobre el evento (Admin, Coordinador, Organizador o Docente asociado)
+    # Verificar permisos de gestión operativa y estructural sobre el evento
     puede_gestionar = puede_gestionar_evento(request.user, evento)
+    puede_editar = puede_editar_evento(request.user, evento)
+    puede_cancelar = puede_cancelar_evento(request.user, evento)
     puede_asignar = puede_asignar_docentes(request.user)
     docentes_asociados = list(obtener_docentes_asociados_evento(evento))
     nrcs_evento = obtener_nrcs_evento(evento)
@@ -213,6 +222,8 @@ def detalle_evento(request, id_evento):
         'inscripcion_usuario': inscripcion_usuario,
         'puede_inscribirse': puede_inscribirse,
         'puede_gestionar': puede_gestionar,
+        'puede_editar_evento': puede_editar,
+        'puede_cancelar_evento': puede_cancelar,
         'puede_asignar_docentes': puede_asignar,
         'docentes_asociados': docentes_asociados,
         'docentes_disponibles': docentes_disponibles,
@@ -275,6 +286,8 @@ def mis_eventos(request):
             else:
                 e.promedio_calificacion = None
                 e.total_calificaciones = 0
+            e.puede_editar = puede_editar_evento(request.user, e)
+            e.puede_cancelar = puede_cancelar_evento(request.user, e)
 
     return render(request, 'eventos/mis_eventos.html', {
         'eventos': eventos,
@@ -286,8 +299,9 @@ def mis_eventos(request):
 def crear_evento(request):
     """
     Creación de nuevos eventos institucionales por parte de usuarios autorizados.
-    Todo evento nuevo inicializa ControlEntradaEvento en estado inactivo para exigir
-    activación explícita de la sesión de entrada compartida.
+    Todo evento nuevo inicializa de forma atómica e idempotente tanto ControlEntradaEvento
+    (entradas_habilitadas=False) como ControlSalidaEvento (salidas_habilitadas=False) para
+    exigir activación formal de cada sesión compartida.
     """
     if not es_usuario_gestion(request.user):
         raise PermissionDenied("No cuentas con permisos para crear eventos institucionales.")
@@ -295,23 +309,21 @@ def crear_evento(request):
     if request.method == 'POST':
         form = EventoForm(request.POST)
         if form.is_valid():
-            evento = form.save(commit=False)
-            evento.organizador = request.user
-            evento.save()
+            with transaction.atomic():
+                evento = form.save(commit=False)
+                evento.organizador = request.user
+                evento.save()
 
-            # Todo evento nuevo exige activación explícita de sesión compartida de entrada
-            ControlEntradaEvento.objects.get_or_create(
-                evento=evento,
-                defaults={'entradas_habilitadas': False},
-            )
+                # Todo evento nuevo inicializa ambas sesiones compartidas en estado cerrado
+                inicializar_controles_sesiones_evento(evento)
 
-            Auditoria.objects.create(
-                usuario=request.user,
-                accion='CREAR_EVENTO',
-                modulo='EVENTOS',
-                registro_afectado=f"Evento ID {evento.pk} - {evento.nombre}"[:100],
-                ip=get_client_ip(request)
-            )
+                Auditoria.objects.create(
+                    usuario=request.user,
+                    accion='CREAR_EVENTO',
+                    modulo='EVENTOS',
+                    registro_afectado=f"Evento ID {evento.pk} - {evento.nombre}"[:100],
+                    ip=get_client_ip(request)
+                )
 
             messages.success(request, f"¡El evento '{evento.nombre}' fue creado exitosamente!")
             return redirect('eventos:detalle', id_evento=evento.pk)
@@ -334,11 +346,13 @@ def crear_evento(request):
 @login_required
 def editar_evento(request, id_evento):
     """
-    Edición de evento existente por su organizador, docentes asociados o administradores/coordinadores.
+    Edición estructural de evento existente reservada a Administradores, Coordinadores
+    y al Organizador creador del evento. Los docentes asociados sin rol organizador
+    conservan sus permisos operativos pero no pueden editar la estructura del evento.
     """
     evento = get_object_or_404(Evento, pk=id_evento)
 
-    if not puede_gestionar_evento(request.user, evento):
+    if not puede_editar_evento(request.user, evento):
         raise PermissionDenied("No tienes autorización para editar este evento.")
 
     if request.method == 'POST':
@@ -373,7 +387,7 @@ def editar_evento(request, id_evento):
 def cancelar_evento(request, id_evento):
     """
     Cancelación formal de eventos institucionales con justificación y auditoría (RF-05).
-    Autorización para organizador, docentes asociados o administradores/coordinadores.
+    Autorización estructural reservada a Administradores, Coordinadores y al Organizador creador.
     Preserva las inscripciones existentes en la base de datos para fines históricos y de trazabilidad.
     """
     evento = get_object_or_404(
@@ -381,7 +395,7 @@ def cancelar_evento(request, id_evento):
         pk=id_evento
     )
 
-    if not puede_gestionar_evento(request.user, evento):
+    if not puede_cancelar_evento(request.user, evento):
         raise PermissionDenied("No tienes autorización para cancelar este evento.")
 
     if evento.estado == EstadoEvento.CANCELADO:

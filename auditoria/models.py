@@ -45,6 +45,33 @@ class Auditoria(models.Model):
         verbose_name_plural = 'Registros de auditoría'
         ordering = ['-fecha']
 
+    def _normalizar_campos_texto(self):
+        """
+        Garantiza de forma centralizada que los campos de texto acotados respeten
+        max_length=100 antes de persistir (evitando DataError en PostgreSQL),
+        sin modificar el esquema ni generar migraciones.
+        """
+        if self.registro_afectado is not None:
+            texto = str(self.registro_afectado)
+            if len(texto) > 100:
+                self.registro_afectado = texto[:100]
+        if self.accion is not None:
+            texto_accion = str(self.accion)
+            if len(texto_accion) > 100:
+                self.accion = texto_accion[:100]
+        if self.modulo is not None:
+            texto_modulo = str(self.modulo)
+            if len(texto_modulo) > 100:
+                self.modulo = texto_modulo[:100]
+
+    def clean(self):
+        self._normalizar_campos_texto()
+        super().clean()
+
+    def save(self, *args, **kwargs):
+        self._normalizar_campos_texto()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         usuario_str = self.usuario.username if self.usuario else "Sistema/Anónimo"
         return f"[{self.modulo}] {self.accion} - {usuario_str}"

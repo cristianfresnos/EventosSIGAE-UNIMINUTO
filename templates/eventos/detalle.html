@@ -277,10 +277,12 @@
             <div class="management-buttons">
                 <a href="{% url 'participantes:gestionar_invitaciones' evento.pk %}" class="btn btn-primary btn-block">✉️ Gestionar Invitaciones</a>
                 <a href="{% url 'asistencia:control_asistencia' evento.pk %}" class="btn btn-secondary btn-block">📱 Control de Asistencia (QR)</a>
-                <a href="{% url 'eventos:editar' evento.pk %}" class="btn btn-secondary btn-block">✏️ Editar Evento</a>
+                {% if puede_editar_evento %}
+                    <a href="{% url 'eventos:editar' evento.pk %}" class="btn btn-secondary btn-block">✏️ Editar Evento</a>
+                {% endif %}
                 <a href="{% url 'reportes:planilla_asistencia_pdf' evento.pk %}" class="btn btn-secondary btn-block">📄 Descargar Planilla PDF</a>
                 <a href="{% url 'reportes:reporte_consolidado_pdf' evento.pk %}" class="btn btn-secondary btn-block">📊 Descargar Reporte PDF</a>
-                {% if evento.estado != 'CANCELADO' and evento.estado != 'FINALIZADO' %}
+                {% if puede_cancelar_evento and evento.estado != 'CANCELADO' and evento.estado != 'FINALIZADO' %}
                     <a href="{% url 'eventos:cancelar' evento.pk %}" class="btn btn-outline-danger btn-block" style="margin-top: 0.5rem; color: #dc2626; border-color: #fca5a5;">✕ Cancelar Evento</a>
                 {% endif %}
             </div>
