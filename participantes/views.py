@@ -12,7 +12,8 @@ from django.contrib import messages
 from django.utils import timezone
 
 from auditoria.models import Auditoria
-from eventos.models import Evento, EstadoEvento, ModalidadInscripcion
+from eventos.models import Evento, EstadoEvento, ModalidadInscripcion, CalificacionEvento
+from eventos.services import es_estudiante_elegible_rol
 from asistencia.models import Asistencia, EstadoAsistencia
 from asistencia.services import generar_token_qr, generar_imagen_qr_bytes, es_salida_habilitada
 from .models import (
@@ -245,11 +246,14 @@ def inscribirse_evento(request, id_evento):
 @login_required
 def mis_inscripciones(request):
     """
-    Panel de consulta de inscripciones del usuario autenticado.
+    Panel de consulta de inscripciones e historial de calificaciones del usuario autenticado (RF-29).
+    Identifica de manera confiable los eventos con entrada y salida confirmadas pendientes de calificación
+    y muestra las puntuaciones ya registradas con opción de actualización propia.
     """
     participante = getattr(request.user, 'perfil_participante', None)
+    es_estudiante = es_estudiante_elegible_rol(request.user)
     if participante:
-        inscripciones = (
+        inscripciones = list(
             participante.inscripciones
             .select_related('evento', 'evento__categoria', 'asistencia')
             .order_by('-fecha_inscripcion')
@@ -257,9 +261,42 @@ def mis_inscripciones(request):
     else:
         inscripciones = []
 
+    calificaciones_map = {}
+    if es_estudiante and inscripciones:
+        evento_ids = [ins.evento_id for ins in inscripciones]
+        calificaciones_map = {
+            c.evento_id: c
+            for c in CalificacionEvento.objects.filter(
+                estudiante=request.user,
+                evento_id__in=evento_ids,
+            )
+        }
+
+    evaluaciones_pendientes = []
+    for ins in inscripciones:
+        asist = getattr(ins, 'asistencia', None)
+        ins.entrada_confirmada = bool(
+            asist and asist.estado == EstadoAsistencia.REGISTRADA and asist.hora_entrada
+        )
+        ins.salida_confirmada = bool(
+            asist and asist.estado == EstadoAsistencia.REGISTRADA and asist.hora_entrada and asist.hora_salida
+        )
+        ins.calificacion_usuario = calificaciones_map.get(ins.evento_id)
+        ins.calificacion_pendiente = bool(
+            es_estudiante
+            and ins.estado == EstadoInscripcion.ACTIVA
+            and ins.salida_confirmada
+            and ins.calificacion_usuario is None
+        )
+        if ins.calificacion_pendiente:
+            evaluaciones_pendientes.append(ins)
+
     return render(request, 'participantes/mis_inscripciones.html', {
         'inscripciones': inscripciones,
-        'total_inscripciones': len(inscripciones) if inscripciones else 0,
+        'total_inscripciones': len(inscripciones),
+        'evaluaciones_pendientes': evaluaciones_pendientes,
+        'total_evaluaciones_pendientes': len(evaluaciones_pendientes),
+        'es_estudiante': es_estudiante,
     })
 
 

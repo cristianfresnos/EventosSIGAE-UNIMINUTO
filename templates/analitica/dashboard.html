@@ -533,6 +533,63 @@
                 Sobre inscripciones elegibles
             </div>
         </div>
+
+        <!-- 7. Satisfacción Promedio (RF-30) -->
+        <div class="kpi-card kpi-card-gold">
+            <div class="kpi-top">
+                <span class="kpi-title">Satisfacción</span>
+                <span class="kpi-icon">⭐</span>
+            </div>
+            <div class="kpi-value">
+                {% if metricas.estadisticas_calificacion.tiene_calificaciones %}
+                    {{ metricas.estadisticas_calificacion.promedio_display }} <span style="font-size: 1.05rem; color: var(--text-muted); font-weight: 400;">/ 5.0</span>
+                {% else %}
+                    &mdash;
+                {% endif %}
+            </div>
+            <div class="kpi-subtext">
+                {% if metricas.estadisticas_calificacion.tiene_calificaciones %}
+                    {{ metricas.estadisticas_calificacion.total_calificaciones }} evaluaci{{ metricas.estadisticas_calificacion.total_calificaciones|pluralize:"ón,ones" }} registradas
+                {% else %}
+                    Sin calificaciones aún
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- DISTRIBUCIÓN DE CALIFICACIONES POR ESTRELLAS (RF-30) -->
+    <div class="table-card" style="margin-bottom: 1.75rem;">
+        <div class="chart-card-header" style="border: none; padding-bottom: 0.5rem;">
+            <h4><span>⭐</span> Satisfacción y Distribución de Calificaciones</h4>
+            <span class="chart-badge">
+                {% if metricas.estadisticas_calificacion.tiene_calificaciones %}
+                    Promedio {{ metricas.estadisticas_calificacion.promedio_display }}/5.0 ({{ metricas.estadisticas_calificacion.total_calificaciones }} evaluaciones)
+                {% else %}
+                    Sin evaluaciones
+                {% endif %}
+            </span>
+        </div>
+        {% if metricas.estadisticas_calificacion.tiene_calificaciones %}
+            <div style="display: flex; flex-direction: column; gap: 0.65rem; padding: 0.5rem 0.25rem;">
+                {% for fila in metricas.estadisticas_calificacion.distribucion %}
+                <div style="display: grid; grid-template-columns: 125px 1fr 110px; align-items: center; gap: 0.85rem; font-size: 0.88rem;">
+                    <div style="font-weight: 600; color: #334155;">
+                        <span style="color: #eab308;">★</span> {{ fila.estrellas }} &mdash; {{ fila.etiqueta }}
+                    </div>
+                    <div style="background: #eaecf0; height: 10px; border-radius: 9999px; overflow: hidden;">
+                        <div style="background: linear-gradient(90deg, #eab308 0%, #f59e0b 100%); height: 100%; width: {{ fila.porcentaje_css }}%; border-radius: 9999px;"></div>
+                    </div>
+                    <div style="text-align: right; color: #475569; font-weight: 600;">
+                        {{ fila.cantidad }} ({{ fila.porcentaje_css }}%)
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p style="margin: 0.5rem 0 0 0; color: var(--text-muted); font-size: 0.9rem;">
+                {{ metricas.estadisticas_calificacion.mensaje_vacio }}
+            </p>
+        {% endif %}
     </div>
 
     <!-- SECCIÓN DE GRÁFICAS (FILA 1: TENDENCIA MENSUAL Y MÉTODOS) -->
@@ -688,6 +745,7 @@
                         <th style="text-align: center;">Inscritos Activos</th>
                         <th style="text-align: center;">Asistencias Válidas</th>
                         <th>% Asistencia</th>
+                        <th style="text-align: center;">Calificación</th>
                         <th style="text-align: right;">Acciones</th>
                     </tr>
                 </thead>
@@ -722,6 +780,14 @@
                                 </div>
                             </div>
                         </td>
+                        <td style="text-align: center; white-space: nowrap;">
+                            {% if item.total_calificaciones %}
+                                <strong style="color: #b45309;">★ {{ item.promedio_calificacion }}</strong>
+                                <div style="font-size: 0.72rem; color: var(--text-muted);">{{ item.total_calificaciones }} eval.</div>
+                            {% else %}
+                                <span style="font-size: 0.78rem; color: var(--text-muted);">Sin calif.</span>
+                            {% endif %}
+                        </td>
                         <td style="text-align: right; white-space: nowrap;">
                             <a href="{% url 'asistencia:control_asistencia' item.evento.pk %}" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" title="Control de Asistencia">
                                 📱 Asistencia
@@ -733,7 +799,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="9" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                        <td colspan="10" style="text-align: center; padding: 2rem; color: var(--text-muted);">
                             No se encontraron eventos que coincidan con los criterios de búsqueda.
                         </td>
                     </tr>

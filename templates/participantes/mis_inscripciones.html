@@ -6,13 +6,38 @@
 <div class="page-header">
     <div class="page-title-group">
         <span class="badge badge-primary">Panel de Participante</span>
-        <h2>Mis Inscripciones a Eventos</h2>
-        <p class="subtitle">Consulta los eventos en los que estás registrado(a) y gestiona tu participación.</p>
+        <h2>Mis Inscripciones e Historial de Eventos</h2>
+        <p class="subtitle">Consulta los eventos en los que estás registrado(a), tu asistencia y tus calificaciones.</p>
     </div>
     <div class="header-action">
         <a href="{% url 'eventos:catalogo' %}" class="btn btn-primary">Explorar Más Eventos</a>
     </div>
 </div>
+
+{% if evaluaciones_pendientes %}
+<div style="background: #fffbeb; border: 2px solid #eab308; border-radius: 14px; padding: 1.35rem 1.5rem; margin-bottom: 1.75rem; box-shadow: 0 4px 12px rgba(234, 179, 8, 0.14);">
+    <div style="display: flex; align-items: flex-start; gap: 0.9rem; flex-wrap: wrap; justify-content: space-between;">
+        <div style="flex: 1; min-width: 240px;">
+            <span style="display: inline-block; background: #fef08a; color: #854d0e; font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.2rem 0.65rem; border-radius: 9999px; margin-bottom: 0.45rem;">
+                ★ Calificación obligatoria pendiente ({{ total_evaluaciones_pendientes }})
+            </span>
+            <h3 style="margin: 0 0 0.35rem 0; font-size: 1.12rem; color: #713f12; font-weight: 700;">
+                Tienes {{ total_evaluaciones_pendientes }} evento{{ total_evaluaciones_pendientes|pluralize }} pendiente{{ total_evaluaciones_pendientes|pluralize }} de calificación
+            </h3>
+            <p style="margin: 0; font-size: 0.9rem; color: #854d0e; line-height: 1.45;">
+                Tu entrada y salida ya están registradas de forma segura. Completa tu calificación de 1 a 5 estrellas para finalizar el proceso de evaluación sin volver a escanear el QR.
+            </p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.45rem; align-self: center;">
+            {% for pend in evaluaciones_pendientes %}
+                <a href="{% url 'eventos:calificar_evento' pend.evento.pk %}" class="btn btn-primary btn-sm" style="background: #002d62; font-weight: 700; white-space: nowrap;">
+                    ⭐ Calificar: {{ pend.evento.nombre|truncatechars:28 }}
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% if inscripciones %}
 <div class="inscriptions-grid">
@@ -29,12 +54,21 @@
                     </span>
                     {% if insc.asistencia %}
                         {% if insc.asistencia.es_valida %}
-                            <span class="badge badge-success">✓ Asistencia Registrada</span>
+                            {% if insc.salida_confirmada %}
+                                <span class="badge badge-success">✓ Entrada y Salida Registradas</span>
+                            {% else %}
+                                <span class="badge badge-success">✓ Asistencia Registrada</span>
+                            {% endif %}
                         {% else %}
                             <span class="badge badge-warning">⚠ Asistencia Anulada</span>
                         {% endif %}
                     {% else %}
                         <span class="badge badge-info">Pendiente de Asistencia</span>
+                    {% endif %}
+                    {% if insc.calificacion_pendiente %}
+                        <span class="badge" style="background: #fef08a; color: #854d0e; border: 1px solid #facc15; font-weight: 700;">⭐ Pendiente de Calificación</span>
+                    {% elif insc.calificacion_usuario %}
+                        <span class="badge" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700;">★ Calificado: {{ insc.calificacion_usuario.puntuacion }}/5 ({{ insc.calificacion_usuario.etiqueta_puntuacion }})</span>
                     {% endif %}
                 {% endif %}
             </div>
@@ -76,6 +110,16 @@
             {% if insc.evento.estado != 'CANCELADO' %}
                 {% if insc.estado == 'ACTIVA' %}
                     <a href="{% url 'asistencia:pase_digital' insc.pk %}" class="btn btn-primary btn-sm">🎟️ Ver Pase / QR</a>
+                {% endif %}
+
+                {% if insc.calificacion_pendiente %}
+                    <a href="{% url 'eventos:calificar_evento' insc.evento.pk %}" class="btn btn-sm" style="background: #eab308; color: #000000; font-weight: 700; border: none;">
+                        ⭐ Calificar Evento (Obligatorio)
+                    </a>
+                {% elif insc.calificacion_usuario %}
+                    <a href="{% url 'eventos:calificar_evento' insc.evento.pk %}" class="btn btn-outline-primary btn-sm">
+                        ✏️ Actualizar Calificación ({{ insc.calificacion_usuario.puntuacion }}★)
+                    </a>
                 {% endif %}
 
                 {% if insc.estado == 'ACTIVA' and not insc.asistio and insc.evento.estado != 'FINALIZADO' and insc.evento.estado != 'CERRADO' %}

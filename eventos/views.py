@@ -1,7 +1,10 @@
+import json
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count, Q
+from django.db.models import Avg, Count, Q
+from django.http import JsonResponse
+from django.urls import reverse
 from django.contrib import messages
 from django.utils import timezone
 
@@ -9,8 +12,16 @@ from auditoria.models import Auditoria
 from participantes.models import Inscripcion, EstadoInscripcion
 from asistencia.models import Asistencia, EstadoAsistencia, ControlSalidaEvento
 from asistencia.services import es_salida_habilitada
-from .models import Evento, CategoriaEvento, ModalidadEvento, EstadoEvento
+from .models import Evento, CategoriaEvento, ModalidadEvento, EstadoEvento, CalificacionEvento
 from .forms import EventoForm
+from .services import (
+    ETIQUETAS_ESTRELLAS,
+    es_estudiante_elegible_rol,
+    verificar_elegibilidad_calificacion,
+    obtener_evaluaciones_pendientes,
+    registrar_o_actualizar_calificacion,
+    calcular_estadisticas_calificacion,
+)
 
 
 def get_client_ip(request):
@@ -165,6 +176,18 @@ def detalle_evento(request, id_evento):
         llegada_registrada = bool(asistencia_usuario and asistencia_usuario.estado == EstadoAsistencia.REGISTRADA and asistencia_usuario.hora_entrada)
         salida_registrada = bool(asistencia_usuario and asistencia_usuario.estado == EstadoAsistencia.REGISTRADA and asistencia_usuario.hora_salida)
 
+    # Estadísticas de calificación del evento (RF-30) — nunca expone calificaciones individuales de terceros
+    estadisticas_calificacion = calcular_estadisticas_calificacion(evento)
+
+    calificacion_usuario = None
+    puede_calificar_usuario = False
+    calificacion_pendiente_usuario = False
+    if request.user.is_authenticated and es_estudiante_elegible_rol(request.user):
+        eleg = verificar_elegibilidad_calificacion(request.user, evento)
+        puede_calificar_usuario = eleg['elegible']
+        calificacion_usuario = eleg['calificacion_existente']
+        calificacion_pendiente_usuario = bool(puede_calificar_usuario and calificacion_usuario is None)
+
     return render(request, 'eventos/detalle.html', {
         'evento': evento,
         'total_activos': total_activos,
@@ -180,6 +203,10 @@ def detalle_evento(request, id_evento):
         'asistencia_usuario': asistencia_usuario,
         'llegada_registrada': llegada_registrada,
         'salida_registrada': salida_registrada,
+        'estadisticas_calificacion': estadisticas_calificacion,
+        'calificacion_usuario': calificacion_usuario,
+        'puede_calificar_usuario': puede_calificar_usuario,
+        'calificacion_pendiente_usuario': calificacion_pendiente_usuario,
     })
 
 
@@ -192,20 +219,43 @@ def mis_eventos(request):
         raise PermissionDenied("No tienes permisos para acceder al panel de gestión de eventos.")
 
     if request.user.is_superuser or request.user.is_staff or (hasattr(request.user, 'rol') and request.user.rol and request.user.rol.nombre in ['Administrador', 'Coordinador']):
-        eventos = (
+        eventos_qs = (
             Evento.objects.select_related('categoria', 'organizador')
             .annotate(total_activos=Count('inscripciones', filter=Q(inscripciones__estado=EstadoInscripcion.ACTIVA)))
             .order_by('-fecha', '-hora_inicio')
         )
         modo_vista = 'todos'
     else:
-        eventos = (
+        eventos_qs = (
             Evento.objects.filter(organizador=request.user)
             .select_related('categoria', 'organizador')
             .annotate(total_activos=Count('inscripciones', filter=Q(inscripciones__estado=EstadoInscripcion.ACTIVA)))
             .order_by('-fecha', '-hora_inicio')
         )
         modo_vista = 'propios'
+
+    eventos = list(eventos_qs)
+    if eventos:
+        stats_map = {
+            item['evento_id']: item
+            for item in (
+                CalificacionEvento.objects
+                .filter(evento_id__in=[e.pk for e in eventos])
+                .values('evento_id')
+                .annotate(
+                    promedio=Avg('puntuacion'),
+                    total=Count('id_calificacion'),
+                )
+            )
+        }
+        for e in eventos:
+            st = stats_map.get(e.pk)
+            if st and st['total']:
+                e.promedio_calificacion = round(float(st['promedio']), 1)
+                e.total_calificaciones = st['total']
+            else:
+                e.promedio_calificacion = None
+                e.total_calificaciones = 0
 
     return render(request, 'eventos/mis_eventos.html', {
         'eventos': eventos,
@@ -359,4 +409,114 @@ def cancelar_evento(request, id_evento):
         'evento': evento,
         'total_inscritos': total_inscritos,
     })
+
+
+@login_required
+def calificar_evento(request, id_evento):
+    """
+    Vista obligatoria de calificación mediante 5 estrellas para estudiantes que completaron
+    su participación (inscripción activa, entrada confirmada y salida registrada) (RF-24 a RF-28).
+
+    Reglas de seguridad y negocio:
+    - Solo accesible por estudiantes autenticados elegibles (Docentes y Administradores reciben 403).
+    - Valida inscripción, entrada y salida estrictamente en backend.
+    - Cuando no existe calificación previa, la evaluación es obligatoria (sin opciones para omitir ni posponer).
+    - Cuando ya existe calificación previa del mismo estudiante, permite actualizar su propia puntuación.
+    - No expone ni permite modificar calificaciones de otros estudiantes.
+    """
+    evento = get_object_or_404(
+        Evento.objects.select_related('categoria', 'organizador'),
+        pk=id_evento
+    )
+
+    is_ajax = (
+        request.headers.get('x-requested-with') == 'XMLHttpRequest'
+        or request.content_type == 'application/json'
+    )
+
+    elegibilidad = verificar_elegibilidad_calificacion(request.user, evento)
+    if not elegibilidad['elegible']:
+        if is_ajax:
+            return JsonResponse({
+                'exito': False,
+                'codigo': elegibilidad['codigo'],
+                'mensaje': elegibilidad['mensaje'],
+            }, status=403)
+        raise PermissionDenied(elegibilidad['mensaje'])
+
+    asistencia = elegibilidad['asistencia']
+    calificacion_existente = elegibilidad['calificacion_existente']
+    es_obligatoria = (calificacion_existente is None)
+    confirmada = (request.GET.get('confirmada') == '1' and calificacion_existente is not None)
+    error_mensaje = None
+
+    if request.method == 'POST':
+        puntuacion_raw = request.POST.get('puntuacion')
+        if puntuacion_raw is None and request.content_type == 'application/json':
+            try:
+                body_data = json.loads(request.body)
+                puntuacion_raw = body_data.get('puntuacion')
+            except Exception:
+                puntuacion_raw = None
+
+        resultado = registrar_o_actualizar_calificacion(
+            user=request.user,
+            evento=evento,
+            puntuacion_raw=puntuacion_raw,
+            ip=get_client_ip(request),
+        )
+
+        if is_ajax:
+            pendientes_restantes = obtener_evaluaciones_pendientes(request.user)
+            siguiente_pendiente = pendientes_restantes.first()
+            return JsonResponse({
+                'exito': resultado['exito'],
+                'codigo': resultado['codigo'],
+                'mensaje': resultado['mensaje'],
+                'puntuacion': resultado['calificacion'].puntuacion if resultado.get('calificacion') else None,
+                'etiqueta': resultado['calificacion'].etiqueta_puntuacion if resultado.get('calificacion') else '',
+                'creada': resultado['creada'],
+                'actualizada': resultado['actualizada'],
+                'tiene_pendientes': siguiente_pendiente is not None,
+                'siguiente_url': (
+                    reverse('eventos:calificar_evento', kwargs={'id_evento': siguiente_pendiente.evento_id})
+                    if siguiente_pendiente else reverse('participantes:mis_inscripciones')
+                ),
+            }, status=resultado['status_http'])
+
+        if resultado['exito']:
+            messages.success(request, resultado['mensaje'])
+            return redirect(f"{reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})}?confirmada=1")
+
+        error_mensaje = resultado['mensaje']
+        status_code = resultado['status_http']
+        return render(request, 'eventos/calificar_evento.html', {
+            'evento': evento,
+            'asistencia': asistencia,
+            'calificacion': calificacion_existente,
+            'es_obligatoria': es_obligatoria,
+            'ocultar_navegacion_obligatoria': es_obligatoria,
+            'confirmada': False,
+            'error_mensaje': error_mensaje,
+            'etiquetas_estrellas': ETIQUETAS_ESTRELLAS,
+            'pendientes_restantes': [],
+            'siguiente_pendiente': None,
+        }, status=status_code)
+
+    pendientes_restantes = list(obtener_evaluaciones_pendientes(request.user).exclude(evento_id=evento.pk))
+    siguiente_pendiente = pendientes_restantes[0] if pendientes_restantes else None
+
+    return render(request, 'eventos/calificar_evento.html', {
+        'evento': evento,
+        'asistencia': asistencia,
+        'calificacion': calificacion_existente,
+        'es_obligatoria': es_obligatoria,
+        'ocultar_navegacion_obligatoria': es_obligatoria,
+        'confirmada': confirmada,
+        'error_mensaje': error_mensaje,
+        'etiquetas_estrellas': ETIQUETAS_ESTRELLAS,
+        'pendientes_restantes': pendientes_restantes,
+        'siguiente_pendiente': siguiente_pendiente,
+    })
+
 

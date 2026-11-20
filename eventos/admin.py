@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
 from django.http import HttpResponseRedirect
-from .models import CategoriaEvento, Evento
+from .models import CategoriaEvento, Evento, CalificacionEvento
 
 
 @admin.register(CategoriaEvento)
@@ -71,3 +71,38 @@ class EventoAdmin(admin.ModelAdmin):
             return None
         evento = queryset.first()
         return HttpResponseRedirect(reverse('reportes:reporte_consolidado_pdf', args=[evento.pk]))
+
+
+@admin.register(CalificacionEvento)
+class CalificacionEventoAdmin(admin.ModelAdmin):
+    list_display = (
+        'id_calificacion',
+        'evento',
+        'puntuacion',
+        'etiqueta_admin',
+        'fecha_creacion',
+        'fecha_actualizacion',
+    )
+    list_filter = ('puntuacion', 'evento', 'fecha_creacion')
+    search_fields = ('evento__nombre',)
+    readonly_fields = (
+        'id_calificacion',
+        'evento',
+        'estudiante',
+        'puntuacion',
+        'fecha_creacion',
+        'fecha_actualizacion',
+    )
+    ordering = ('-fecha_actualizacion',)
+
+    @admin.display(description='Valoración')
+    def etiqueta_admin(self, obj):
+        return obj.etiqueta_puntuacion
+
+    def has_add_permission(self, request):
+        # Los administradores no pueden registrar calificaciones en nombre de estudiantes (RF-28)
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        # Solo lectura para preservar la autenticidad de las calificaciones estudiantiles
+        return False

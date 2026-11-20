@@ -4,6 +4,7 @@
 {% block title %}Registro de Salida | {{ evento.nombre }} | SIGAE — UNIMINUTO{% endblock %}
 
 {% block content %}
+{% if not mostrar_calificacion_obligatoria %}
 <div class="breadcrumb-nav">
     <a href="{% url 'inicio' %}">Inicio</a>
     <span class="sep">/</span>
@@ -11,6 +12,7 @@
     <span class="sep">/</span>
     <span class="current">Registro de Salida</span>
 </div>
+{% endif %}
 
 <div class="checkout-wrapper" style="max-width: 600px; margin: 2rem auto; padding: 0 1rem;">
     <!-- Tarjeta Principal del Evento -->
@@ -51,29 +53,91 @@
                     <h3 style="color: #166534; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem;">
                         ¡Salida Registrada con Éxito!
                     </h3>
-                    <p style="color: #475569; font-size: 0.95rem; margin-bottom: 1.5rem;">
-                        Gracias por tu participación en este evento institucional.
-                    </p>
 
-                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.2rem; margin-bottom: 1.5rem; text-align: left;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.6rem; font-size: 0.9rem;">
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.1rem; margin-bottom: 1.4rem; text-align: left;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.9rem;">
                             <span style="color: #64748b;">Participante:</span>
                             <strong style="color: #0f2b46;">{{ resultado.participante }}</strong>
                         </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.6rem; font-size: 0.9rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.9rem;">
                             <span style="color: #64748b;">Hora de Salida:</span>
                             <strong style="color: #0f2b46;">{{ resultado.asistencia.hora_salida|time:"H:i:s" }}</strong>
                         </div>
                         {% if resultado.permanencia %}
-                        <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding-top: 0.6rem; border-top: 1px dashed #cbd5e1;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding-top: 0.5rem; border-top: 1px dashed #cbd5e1;">
                             <span style="color: #64748b;">Tiempo de Permanencia:</span>
                             <strong style="color: #16a34a; font-size: 1rem;">⏱️ {{ resultado.permanencia.texto }}</strong>
                         </div>
                         {% endif %}
                     </div>
 
-                    <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-weight: 600; border-radius: 8px;">
-                        ← Volver a la ficha del evento
+                    {% if mostrar_calificacion_obligatoria %}
+                        <!-- Pantalla obligatoria de calificación posterior a la salida (RF-24 a RF-27) -->
+                        <div id="bloqueCalificacionObligatoria" style="background: #ffffff; border: 2px solid #eab308; border-radius: 12px; padding: 1.4rem 1.2rem; margin-top: 1rem;">
+                            <span style="display: inline-block; background: #fef9c3; color: #854d0e; font-size: 0.78rem; font-weight: 700; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.65rem;">
+                                ★ Evaluación obligatoria del evento
+                            </span>
+                            <h4 style="color: #002d62; font-size: 1.3rem; font-weight: 700; margin: 0 0 0.4rem 0;">
+                                ¡Gracias por participar!
+                            </h4>
+                            <p style="color: #475569; font-size: 0.93rem; margin: 0 0 0.9rem 0;">
+                                Tu opinión es importante para mejorar nuestras actividades académicas.
+                            </p>
+                            <p style="color: #002d62; font-size: 1.08rem; font-weight: 700; margin: 0 0 0.9rem 0;">
+                                ¿Cómo calificas este evento?
+                            </p>
+
+                            <form method="post" action="{{ url_calificar_evento }}" id="formCalificacionSalida" novalidate>
+                                {% csrf_token %}
+                                <input type="hidden" name="puntuacion" id="puntuacionSalidaInput" value="">
+
+                                <div id="starsSelectorSalida" role="radiogroup" aria-label="Calificación de 1 a 5 estrellas" style="display: inline-flex; justify-content: center; gap: 0.45rem; padding: 0.5rem 0.9rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 0.85rem;">
+                                    <button type="button" class="star-btn-salida" data-value="1" aria-label="1 estrella - Muy malo" role="radio" style="background: transparent; border: none; cursor: pointer; font-size: 2.35rem; color: #cbd5e1; line-height: 1; padding: 0.2rem;">★</button>
+                                    <button type="button" class="star-btn-salida" data-value="2" aria-label="2 estrellas - Malo" role="radio" style="background: transparent; border: none; cursor: pointer; font-size: 2.35rem; color: #cbd5e1; line-height: 1; padding: 0.2rem;">★</button>
+                                    <button type="button" class="star-btn-salida" data-value="3" aria-label="3 estrellas - Regular" role="radio" style="background: transparent; border: none; cursor: pointer; font-size: 2.35rem; color: #cbd5e1; line-height: 1; padding: 0.2rem;">★</button>
+                                    <button type="button" class="star-btn-salida" data-value="4" aria-label="4 estrellas - Bueno" role="radio" style="background: transparent; border: none; cursor: pointer; font-size: 2.35rem; color: #cbd5e1; line-height: 1; padding: 0.2rem;">★</button>
+                                    <button type="button" class="star-btn-salida" data-value="5" aria-label="5 estrellas - Excelente" role="radio" style="background: transparent; border: none; cursor: pointer; font-size: 2.35rem; color: #cbd5e1; line-height: 1; padding: 0.2rem;">★</button>
+                                </div>
+
+                                <div id="feedbackEstrellasSalida" aria-live="polite" style="min-height: 2.6rem; margin-bottom: 1rem;">
+                                    <span id="placeholderSalida" style="font-size: 0.86rem; color: #64748b;">
+                                        Selecciona de 1 a 5 estrellas para habilitar el envío
+                                    </span>
+                                    <div id="detalleSeleccionSalida" style="display: none;">
+                                        <span id="conteoEstrellasSalida" style="font-size: 0.9rem; font-weight: 600; color: #334155;"></span>
+                                        <span id="etiquetaEstrellasSalida" style="display: inline-block; margin-left: 0.4rem; padding: 0.2rem 0.7rem; border-radius: 9999px; font-size: 0.84rem; font-weight: 700; background: #fef9c3; color: #854d0e; border: 1px solid #fde047;"></span>
+                                    </div>
+                                </div>
+
+                                <button type="submit" id="btnEnviarCalificacionSalida" disabled class="btn btn-primary" style="width: 100%; padding: 0.88rem; font-size: 1rem; font-weight: 700; border-radius: 8px; background: #002d62;">
+                                    Enviar calificación
+                                </button>
+                            </form>
+                        </div>
+                    {% else %}
+                        <p style="color: #475569; font-size: 0.95rem; margin-bottom: 1.5rem;">
+                            Gracias por tu participación en este evento institucional.
+                        </p>
+                        <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-weight: 600; border-radius: 8px;">
+                            ← Volver a la ficha del evento
+                        </a>
+                    {% endif %}
+                </div>
+
+            {% elif mostrar_calificacion_obligatoria %}
+                <!-- Salida ya registrada previamente con calificación obligatoria pendiente -->
+                <div style="text-align: center; padding: 0.5rem 0;">
+                    <div style="display: inline-block; background: #dcfce7; color: #166534; font-size: 0.84rem; font-weight: 700; padding: 0.35rem 0.9rem; border-radius: 9999px; margin-bottom: 1rem;">
+                        ✓ Tu salida ya se encuentra registrada
+                    </div>
+                    <h3 style="color: #002d62; font-size: 1.35rem; font-weight: 700; margin: 0 0 0.4rem 0;">
+                        ¡Gracias por participar!
+                    </h3>
+                    <p style="color: #475569; font-size: 0.94rem; margin: 0 0 1.2rem 0;">
+                        Tu opinión es importante para mejorar nuestras actividades académicas. Completa tu calificación obligatoria para finalizar.
+                    </p>
+                    <a href="{{ url_calificar_evento }}" class="btn btn-primary" style="width: 100%; padding: 0.9rem; font-size: 1rem; font-weight: 700; border-radius: 8px; background: #002d62;">
+                        ⭐ Calificar este evento ahora
                     </a>
                 </div>
 
@@ -156,4 +220,78 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{% if mostrar_calificacion_obligatoria %}
+<script>
+(function() {
+    const form = document.getElementById('formCalificacionSalida');
+    if (!form) return;
+
+    const ETIQUETAS = {
+        1: 'Muy malo',
+        2: 'Malo',
+        3: 'Regular',
+        4: 'Bueno',
+        5: 'Excelente'
+    };
+
+    const buttons = Array.from(document.querySelectorAll('.star-btn-salida'));
+    const input = document.getElementById('puntuacionSalidaInput');
+    const submitBtn = document.getElementById('btnEnviarCalificacionSalida');
+    const placeholder = document.getElementById('placeholderSalida');
+    const detalle = document.getElementById('detalleSeleccionSalida');
+    const conteoEl = document.getElementById('conteoEstrellasSalida');
+    const etiquetaEl = document.getElementById('etiquetaEstrellasSalida');
+
+    let selected = 0;
+    let submitting = false;
+
+    function paint(val) {
+        buttons.forEach(function(btn) {
+            const v = parseInt(btn.getAttribute('data-value'), 10);
+            btn.style.color = (v <= val) ? '#eab308' : '#cbd5e1';
+            btn.style.transform = (v === val) ? 'scale(1.12)' : 'scale(1)';
+        });
+        if (val >= 1 && val <= 5) {
+            placeholder.style.display = 'none';
+            detalle.style.display = 'block';
+            conteoEl.textContent = val + (val === 1 ? ' estrella' : ' estrellas') + ' de 5';
+            etiquetaEl.textContent = ETIQUETAS[val];
+        } else {
+            placeholder.style.display = 'block';
+            detalle.style.display = 'none';
+        }
+    }
+
+    buttons.forEach(function(btn) {
+        const v = parseInt(btn.getAttribute('data-value'), 10);
+        btn.addEventListener('mouseenter', function() { paint(v); });
+        btn.addEventListener('click', function() {
+            selected = v;
+            input.value = String(v);
+            submitBtn.disabled = false;
+            paint(selected);
+        });
+    });
+
+    const box = document.getElementById('starsSelectorSalida');
+    if (box) {
+        box.addEventListener('mouseleave', function() { paint(selected); });
+    }
+
+    form.addEventListener('submit', function(e) {
+        const v = parseInt(input.value, 10);
+        if (submitting || !v || v < 1 || v > 5) {
+            e.preventDefault();
+            return;
+        }
+        submitting = true;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Guardando calificación...';
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

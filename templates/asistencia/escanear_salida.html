@@ -354,6 +354,14 @@ async function sendExitRegistration(tokenData) {
                 stSalida.innerText = '✓ ' + (data.hora_salida || 'Registrada');
                 stSalida.style.color = '#16a34a';
             }
+
+            // Integración obligatoria con calificación por estrellas (RF-26, RF-27)
+            if (data.requiere_calificacion && data.url_calificacion) {
+                const links = sPanel.querySelectorAll('a');
+                links.forEach(function(a) { a.style.display = 'none'; });
+                document.getElementById('successMessage').innerText = '¡Salida registrada! Redirigiendo a tu calificación obligatoria del evento...';
+                window.location.replace(data.url_calificacion);
+            }
         } else {
             showFeedback('error', data.mensaje || 'No fue posible registrar la salida. Intenta nuevamente.');
             // Reanudar escaneo tras breve pausa

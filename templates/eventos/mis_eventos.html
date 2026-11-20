@@ -30,6 +30,7 @@
                 <th>Modalidad / Lugar</th>
                 <th>Estado</th>
                 <th>Inscritos</th>
+                <th>Calificación</th>
                 <th>Documentos y Acciones</th>
             </tr>
         </thead>
@@ -59,6 +60,14 @@
                 <td>
                     <strong>{{ evento.total_activos }}</strong>
                     {% if evento.cupo %}<span class="table-sub">/ {{ evento.cupo }}</span>{% else %}<span class="table-sub">(Ilimitado)</span>{% endif %}
+                </td>
+                <td>
+                    {% if evento.total_calificaciones %}
+                        <strong style="color: #b45309;">★ {{ evento.promedio_calificacion }}</strong>
+                        <div class="table-sub">{{ evento.total_calificaciones }} eval.</div>
+                    {% else %}
+                        <span class="table-sub">Sin calif.</span>
+                    {% endif %}
                 </td>
                 <td>
                     <div class="table-actions">

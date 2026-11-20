@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 
 
@@ -140,3 +141,89 @@ class Evento(models.Model):
                 raise ValidationError({
                     'hora_fin': 'La hora de fin no puede ser anterior o igual a la hora de inicio.'
                 })
+
+
+class CalificacionEvento(models.Model):
+    """
+    Calificación obligatoria mediante escala de 1 a 5 estrellas emitida por un estudiante
+    tras completar su asistencia (entrada y salida confirmadas) en un evento institucional.
+    Garantiza unicidad por combinación Evento + Estudiante y validación de rango en BD y modelo.
+    """
+    ETIQUETAS_PUNTUACION = {
+        1: 'Muy malo',
+        2: 'Malo',
+        3: 'Regular',
+        4: 'Bueno',
+        5: 'Excelente',
+    }
+
+    id_calificacion = models.AutoField(primary_key=True)
+    evento = models.ForeignKey(
+        Evento,
+        on_delete=models.CASCADE,
+        related_name='calificaciones',
+        verbose_name='Evento'
+    )
+    estudiante = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='calificaciones_eventos',
+        verbose_name='Estudiante'
+    )
+    puntuacion = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+        verbose_name='Puntuación'
+    )
+    fecha_creacion = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Fecha de creación'
+    )
+    fecha_actualizacion = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Fecha de última actualización'
+    )
+
+    class Meta:
+        verbose_name = 'Calificación de evento'
+        verbose_name_plural = 'Calificaciones de eventos'
+        ordering = ['-fecha_actualizacion', '-fecha_creacion']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['evento', 'estudiante'],
+                name='unique_calificacion_evento_estudiante'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(puntuacion__gte=1, puntuacion__lte=5),
+                name='check_calificacion_puntuacion_1_5'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['evento', 'puntuacion'], name='idx_calif_evento_punt'),
+            models.Index(fields=['estudiante', 'fecha_creacion'], name='idx_calif_est_fecha'),
+        ]
+
+    def __str__(self):
+        return f"Evento #{self.evento_id} - {self.estudiante} ({self.puntuacion}★)"
+
+    @property
+    def etiqueta_puntuacion(self):
+        """Retorna la descripción textual correspondiente a la puntuación de 1 a 5."""
+        return self.ETIQUETAS_PUNTUACION.get(self.puntuacion, '')
+
+    def clean(self):
+        super().clean()
+        if self.puntuacion is None or isinstance(self.puntuacion, bool):
+            raise ValidationError({
+                'puntuacion': 'Debes seleccionar una calificación válida entre 1 y 5 estrellas.'
+            })
+        try:
+            valor = int(self.puntuacion)
+        except (TypeError, ValueError):
+            raise ValidationError({
+                'puntuacion': 'La puntuación debe ser un número entero entre 1 y 5.'
+            })
+        if valor < 1 or valor > 5:
+            raise ValidationError({
+                'puntuacion': 'La calificación debe estar comprendida entre 1 y 5 estrellas.'
+            })
+        self.puntuacion = valor

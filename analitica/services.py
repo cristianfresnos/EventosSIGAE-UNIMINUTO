@@ -7,10 +7,11 @@ import csv
 import io
 import datetime
 from django.utils import timezone
-from django.db.models import Count, Q, F
+from django.db.models import Avg, Count, Q, F
 from django.db.models.functions import TruncMonth
 
-from eventos.models import Evento, EstadoEvento, ModalidadEvento, CategoriaEvento
+from eventos.models import Evento, EstadoEvento, ModalidadEvento, CategoriaEvento, CalificacionEvento
+from eventos.services import calcular_estadisticas_calificacion_global
 from participantes.models import Participante, Inscripcion, EstadoInscripcion
 from asistencia.models import Asistencia, EstadoAsistencia, MetodoAsistencia
 
@@ -239,6 +240,16 @@ def calcular_metricas_dashboard(eventos_qs):
         .order_by('-fecha', 'nombre')
     )
 
+    calif_por_evento = {
+        row['evento_id']: row
+        for row in (
+            CalificacionEvento.objects
+            .filter(evento__in=eventos_qs)
+            .values('evento_id')
+            .annotate(promedio=Avg('puntuacion'), total=Count('id_calificacion'))
+        )
+    }
+
     tabla_eventos = []
     grafica_eventos_labels = []
     grafica_eventos_asistencia = []
@@ -248,12 +259,17 @@ def calcular_metricas_dashboard(eventos_qs):
         activos = ev.inscritos_activos
         validas = ev.asistencias_validas
         pct = round((validas / activos * 100.0), 1) if activos > 0 else 0.0
+        calif_ev = calif_por_evento.get(ev.pk)
+        promedio_ev = round(float(calif_ev['promedio']), 2) if (calif_ev and calif_ev['total']) else None
+        total_calif_ev = calif_ev['total'] if calif_ev else 0
 
         tabla_eventos.append({
             'evento': ev,
             'inscritos_activos': activos,
             'asistencias_validas': validas,
             'porcentaje': pct,
+            'promedio_calificacion': promedio_ev,
+            'total_calificaciones': total_calif_ev,
         })
 
         # Para las gráficas tomamos el nombre del evento (truncado si es muy largo)
@@ -321,6 +337,9 @@ def calcular_metricas_dashboard(eventos_qs):
     grafica_metodos_data = [m['total'] for m in dist_metodos_qs]
     tiene_metodos = bool(grafica_metodos_data)
 
+    # 7. ESTADÍSTICAS CONSOLIDADAS DE CALIFICACIÓN POR ESTRELLAS (RF-30)
+    estadisticas_calificacion = calcular_estadisticas_calificacion_global(eventos_qs)
+
     return {
         # KPIs
         'total_eventos': total_eventos,
@@ -331,6 +350,7 @@ def calcular_metricas_dashboard(eventos_qs):
         'total_asistencias_efectivas': total_asistencias_efectivas,
         'total_asistencias_anuladas': total_asistencias_anuladas,
         'porcentaje_asistencia_efectiva': porcentaje_asistencia_efectiva,
+        'estadisticas_calificacion': estadisticas_calificacion,
 
         # Tablas y listas
         'tabla_eventos': tabla_eventos,

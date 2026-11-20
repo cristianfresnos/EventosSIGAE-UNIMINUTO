@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.utils.http import url_has_allowed_host_and_scheme
 from auditoria.models import Auditoria
+from eventos.services import obtener_primera_evaluacion_pendiente
 from .forms import LoginForm, RegistroUsuarioForm
 from .models import TokenVerificacionCorreo
 from .services import enviar_correo_verificacion
@@ -42,6 +43,16 @@ def login_view(request):
             )
 
             messages.success(request, f"¡Bienvenido(a), {user.get_full_name() or user.username}!")
+
+            # Recuperación automática de calificaciones obligatorias pendientes al iniciar sesión (RF-27, RF-29)
+            pendiente_calif = obtener_primera_evaluacion_pendiente(user)
+            if pendiente_calif is not None and '/salida/' not in str(next_url):
+                messages.warning(
+                    request,
+                    f"Tienes una calificación obligatoria pendiente para el evento '{pendiente_calif.evento.nombre}'. Por favor complétala para continuar."
+                )
+                return redirect('eventos:calificar_evento', id_evento=pendiente_calif.evento_id)
+
             if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
                 return redirect(next_url)
             return redirect('inicio')

@@ -12,6 +12,7 @@ from django.core import signing
 
 from auditoria.models import Auditoria
 from eventos.models import Evento
+from eventos.services import ETIQUETAS_ESTRELLAS, verificar_elegibilidad_calificacion
 from participantes.models import Inscripcion, EstadoInscripcion, AccesoExternoInscripcion
 from .models import Asistencia, MetodoAsistencia, EstadoAsistencia, ControlSalidaEvento
 from .services import (
@@ -742,6 +743,16 @@ def salida_evento_publica(request, id_evento):
             ip=ip_cliente,
             observaciones="Salida confirmada mediante QR colectivo con identidad de sesión validada"
         )
+
+        # Determinar evaluación obligatoria posterior a la persistencia de la salida (RF-26, RF-27)
+        requiere_calificacion = False
+        url_calificacion = ''
+        if request.user.is_authenticated and (resultado['exito'] or resultado.get('codigo') == 'SALIDA_YA_REGISTRADA'):
+            eleg_calif = verificar_elegibilidad_calificacion(request.user, evento)
+            if eleg_calif['elegible'] and eleg_calif['calificacion_existente'] is None:
+                requiere_calificacion = True
+                url_calificacion = reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})
+
         if is_ajax:
             return JsonResponse({
                 'exito': resultado['exito'],
@@ -749,7 +760,20 @@ def salida_evento_publica(request, id_evento):
                 'mensaje': resultado['mensaje'],
                 'permanencia': resultado.get('permanencia', {}).get('texto', '') if resultado.get('permanencia') else '',
                 'participante': f"{inscripcion_target.participante.nombres} {inscripcion_target.participante.apellidos}",
+                'requiere_calificacion': requiere_calificacion,
+                'url_calificacion': url_calificacion,
             })
+
+    mostrar_calificacion_obligatoria = False
+    calificacion_existente = None
+    url_calificar_evento = ''
+    if request.user.is_authenticated:
+        eleg_vista = verificar_elegibilidad_calificacion(request.user, evento)
+        if eleg_vista['elegible']:
+            calificacion_existente = eleg_vista['calificacion_existente']
+            url_calificar_evento = reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})
+            if calificacion_existente is None:
+                mostrar_calificacion_obligatoria = True
 
     return render(request, 'asistencia/salida_evento.html', {
         'evento': evento,
@@ -757,6 +781,11 @@ def salida_evento_publica(request, id_evento):
         'salidas_activas': salidas_activas,
         'resultado': resultado,
         'inscripcion_usuario': inscripcion_target,
+        'mostrar_calificacion_obligatoria': mostrar_calificacion_obligatoria,
+        'ocultar_navegacion_obligatoria': mostrar_calificacion_obligatoria,
+        'calificacion_existente': calificacion_existente,
+        'url_calificar_evento': url_calificar_evento,
+        'etiquetas_estrellas': ETIQUETAS_ESTRELLAS,
     })
 
 
@@ -1074,13 +1103,29 @@ def registrar_salida_participante(request, id_evento):
     if resultado.get('codigo') == 'SALIDA_YA_REGISTRADA':
         status_code = 200
 
+    # Evaluar obligación de calificación inmediatamente después de persistir la salida (RF-26, RF-27)
+    requiere_calificacion = False
+    ya_califico = False
+    url_calificacion = ''
+    if request.user.is_authenticated and (resultado['exito'] or resultado.get('codigo') == 'SALIDA_YA_REGISTRADA'):
+        eleg_calif = verificar_elegibilidad_calificacion(request.user, evento)
+        if eleg_calif['elegible']:
+            url_calificacion = reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})
+            if eleg_calif['calificacion_existente'] is None:
+                requiere_calificacion = True
+            else:
+                ya_califico = True
+
     return JsonResponse({
         'exito': resultado['exito'],
         'codigo': resultado['codigo'],
         'mensaje': resultado['mensaje'],
         'participante': f"{inscripcion.participante.nombres} {inscripcion.participante.apellidos}",
         'permanencia': resultado.get('permanencia', {}).get('texto', '') if resultado.get('permanencia') else '',
-        'hora_salida': resultado['asistencia'].hora_salida.strftime('%H:%M:%S') if resultado.get('asistencia') and resultado['asistencia'].hora_salida else ''
+        'hora_salida': resultado['asistencia'].hora_salida.strftime('%H:%M:%S') if resultado.get('asistencia') and resultado['asistencia'].hora_salida else '',
+        'requiere_calificacion': requiere_calificacion,
+        'ya_califico': ya_califico,
+        'url_calificacion': url_calificacion,
     }, status=status_code)
 
 
@@ -1133,6 +1178,12 @@ def escanear_salida(request, id_evento):
     asistencia = getattr(inscripcion, 'asistencia', None)
     llegada_registrada = bool(asistencia and asistencia.estado == EstadoAsistencia.REGISTRADA and asistencia.hora_entrada)
     salida_registrada = bool(asistencia and asistencia.estado == EstadoAsistencia.REGISTRADA and asistencia.hora_salida)
+
+    # Si ya registró salida y tiene calificación obligatoria pendiente, redirigir directamente sin re-escanear QR (RF-27)
+    if salida_registrada and request.user.is_authenticated:
+        eleg_calif = verificar_elegibilidad_calificacion(request.user, evento)
+        if eleg_calif['elegible'] and eleg_calif['calificacion_existente'] is None:
+            return redirect('eventos:calificar_evento', id_evento=evento.pk)
 
     control = ControlSalidaEvento.objects.filter(evento=evento).first()
     salidas_habilitadas = bool(control and control.salidas_habilitadas and control.fecha_cierre is None)
