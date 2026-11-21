@@ -153,9 +153,11 @@ class Evento(models.Model):
 
 class CalificacionEvento(models.Model):
     """
-    Calificación obligatoria mediante escala de 1 a 5 estrellas emitida por un estudiante
-    tras completar su asistencia (entrada y salida confirmadas) en un evento institucional.
-    Garantiza unicidad por combinación Evento + Estudiante y validación de rango en BD y modelo.
+    Calificación obligatoria mediante escala de 1 a 5 estrellas emitida tras completar
+    la asistencia (entrada y salida confirmadas) en un evento institucional (RF-24 a RF-31).
+    Admite tanto estudiantes institucionales (estudiante + inscripcion) como participantes
+    externos sin cuenta institucional (inscripcion con estudiante=NULL), garantizando
+    unicidad e integridad referencial en base de datos y modelo.
     """
     ETIQUETAS_PUNTUACION = {
         1: 'Muy malo',
@@ -175,8 +177,18 @@ class CalificacionEvento(models.Model):
     estudiante = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name='calificaciones_eventos',
         verbose_name='Estudiante'
+    )
+    inscripcion = models.ForeignKey(
+        'participantes.Inscripcion',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='calificaciones',
+        verbose_name='Inscripción'
     )
     puntuacion = models.PositiveSmallIntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(5)],
@@ -198,7 +210,17 @@ class CalificacionEvento(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['evento', 'estudiante'],
+                condition=models.Q(estudiante__isnull=False),
                 name='unique_calificacion_evento_estudiante'
+            ),
+            models.UniqueConstraint(
+                fields=['inscripcion'],
+                condition=models.Q(inscripcion__isnull=False),
+                name='unique_calificacion_inscripcion'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(estudiante__isnull=False) | models.Q(inscripcion__isnull=False),
+                name='check_calificacion_tiene_sujeto'
             ),
             models.CheckConstraint(
                 condition=models.Q(puntuacion__gte=1, puntuacion__lte=5),
@@ -211,7 +233,21 @@ class CalificacionEvento(models.Model):
         ]
 
     def __str__(self):
-        return f"Evento #{self.evento_id} - {self.estudiante} ({self.puntuacion}★)"
+        if self.estudiante_id:
+            sujeto = str(self.estudiante)
+        else:
+            sujeto = f"Externo (Inscripción #{self.inscripcion_id})"
+        return f"Evento #{self.evento_id} - {sujeto} ({self.puntuacion}★)"
+
+    @property
+    def es_externa(self):
+        """Indica si la calificación corresponde a un participante externo sin cuenta institucional."""
+        return self.estudiante_id is None and self.inscripcion_id is not None
+
+    @property
+    def tipo_participante_label(self):
+        """Clasificación no sensible del origen de la evaluación para paneles administrativos."""
+        return 'Externo' if self.es_externa else 'Institucional'
 
     @property
     def etiqueta_puntuacion(self):
@@ -235,6 +271,32 @@ class CalificacionEvento(models.Model):
                 'puntuacion': 'La calificación debe estar comprendida entre 1 y 5 estrellas.'
             })
         self.puntuacion = valor
+
+        if not self.estudiante_id and not self.inscripcion_id:
+            raise ValidationError(
+                'La calificación debe estar asociada al menos a un estudiante o a una inscripción.'
+            )
+
+        if self.inscripcion_id:
+            inscripcion = getattr(self, 'inscripcion', None)
+            if inscripcion is None:
+                from participantes.models import Inscripcion
+                inscripcion = Inscripcion.objects.select_related('participante').filter(pk=self.inscripcion_id).first()
+            if inscripcion is not None:
+                if self.evento_id and inscripcion.evento_id != self.evento_id:
+                    raise ValidationError({
+                        'inscripcion': 'La inscripción no corresponde al evento que se está calificando.'
+                    })
+                part_usuario_id = getattr(inscripcion.participante, 'usuario_id', None) if getattr(inscripcion, 'participante', None) else None
+                if self.estudiante_id:
+                    if part_usuario_id != self.estudiante_id:
+                        raise ValidationError({
+                            'inscripcion': 'La inscripción no corresponde al estudiante asociado a esta calificación.'
+                        })
+                elif part_usuario_id is not None:
+                    raise ValidationError({
+                        'estudiante': 'Una inscripción perteneciente a un usuario institucional debe asociar su estudiante.'
+                    })
 
 
 class DocenteEvento(models.Model):

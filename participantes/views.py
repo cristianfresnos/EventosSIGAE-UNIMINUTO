@@ -14,7 +14,7 @@ from django.utils import timezone
 from auditoria.models import Auditoria
 from eventos.models import Evento, EstadoEvento, ModalidadInscripcion, CalificacionEvento
 from eventos.permissions import puede_gestionar_evento as puede_gestionar_evento_unificado, obtener_nrcs_evento
-from eventos.services import es_estudiante_elegible_rol
+from eventos.services import es_estudiante_elegible_rol, verificar_elegibilidad_calificacion_externa
 from asistencia.models import Asistencia, EstadoAsistencia
 from asistencia.services import generar_token_qr, generar_imagen_qr_bytes, es_salida_habilitada
 from .models import (
@@ -1017,6 +1017,17 @@ def inscripcion_publica_view(request, id_evento):
                     if raw_token:
                         enviado = enviar_correo_confirmacion_externa(insc_activa, acceso_ext, raw_token, request)
 
+                    # Si el participante externo ya completó entrada y salida pero tiene calificación pendiente, redirigir (RF-31)
+                    eleg_calif_ext = verificar_elegibilidad_calificacion_externa(
+                        insc_activa,
+                        evento=evento_lock,
+                        acceso_externo=acceso_ext,
+                    )
+                    if eleg_calif_ext['elegible'] and eleg_calif_ext['calificacion_existente'] is None:
+                        response = redirect('eventos:calificar_evento', id_evento=evento_lock.pk)
+                        response['Referrer-Policy'] = 'no-referrer'
+                        return response
+
                     ctx_comprobante = _construir_contexto_comprobante_externo(insc_activa)
                     response = render(request, 'participantes/inscripcion_publica_resultado.html', {
                         'estado': 'YA_INSCRITO',
@@ -1463,6 +1474,17 @@ def ver_inscripcion_externa(request):
     salida_registrada = bool(asistencia and asistencia.estado == EstadoAsistencia.REGISTRADA and asistencia.hora_salida)
     salidas_habilitadas = es_salida_habilitada(evento)
 
+    # Detectar evaluación obligatoria pendiente para el participante externo (RF-31)
+    eleg_calif = verificar_elegibilidad_calificacion_externa(
+        inscripcion,
+        evento=evento,
+        acceso_externo=acceso,
+    )
+    if eleg_calif['elegible'] and eleg_calif['calificacion_existente'] is None:
+        response = redirect('eventos:calificar_evento', id_evento=evento.pk)
+        response['Referrer-Policy'] = 'no-referrer'
+        return response
+
     token_qr = generar_token_qr(inscripcion)
     qr_bytes = generar_imagen_qr_bytes(token_qr)
     qr_base64 = base64.b64encode(qr_bytes).decode('utf-8')
@@ -1476,6 +1498,8 @@ def ver_inscripcion_externa(request):
         'llegada_registrada': llegada_registrada,
         'salida_registrada': salida_registrada,
         'salidas_habilitadas': salidas_habilitadas,
+        'calificacion_externa': eleg_calif['calificacion_existente'],
+        'puede_calificar_externo': eleg_calif['elegible'],
         'token_qr': token_qr,
         'qr_base64': qr_base64,
     })

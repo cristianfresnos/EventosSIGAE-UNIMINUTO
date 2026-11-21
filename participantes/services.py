@@ -468,31 +468,92 @@ def limpiar_sesion_acceso_externo(request):
         request.session.pop(clave, None)
 
 
+def diagnosticar_acceso_externo_sesion(request, evento=None):
+    """
+    Valida criptográficamente el contexto de sesión de un participante externo
+    (acceso_externo_id + acceso_externo_hash) sin depender de parámetros enviados
+    por el navegador.
+
+    Retorna una tupla (acceso_valido | None, codigo: str, mensaje: str):
+    - ('VALIDO') únicamente cuando el acceso existe, su hash coincide, no está revocado
+      ni expirado, la inscripción está ACTIVA, el participante carece de cuenta institucional
+      y (si se indica evento) corresponde estrictamente al evento solicitado.
+    """
+    from .models import AccesoExternoInscripcion, EstadoInscripcion
+
+    session = getattr(request, 'session', None)
+    if session is None:
+        return None, 'SIN_SESION', 'No se detectó una sesión externa activa.'
+
+    acceso_id = session.get('acceso_externo_id')
+    token_hash = session.get('acceso_externo_hash')
+    if not acceso_id or not token_hash:
+        return None, 'SIN_SESION', 'No se detectó una sesión externa activa.'
+
+    acceso = (
+        AccesoExternoInscripcion.objects
+        .select_related(
+            'inscripcion',
+            'inscripcion__evento',
+            'inscripcion__participante',
+            'inscripcion__asistencia',
+        )
+        .filter(pk=acceso_id)
+        .first()
+    )
+    if not acceso or not isinstance(token_hash, str) or not hmac.compare_digest(acceso.token_hash, token_hash):
+        return None, 'ACCESO_EXTERNO_INVALIDO', 'Tu sesión de participante externo no es válida. Recupera nuevamente tu inscripción.'
+
+    if acceso.revocado:
+        return None, 'ACCESO_EXTERNO_REVOCADO', (
+            'El acceso a esta inscripción fue revocado y no puede utilizarse para calificar el evento.'
+        )
+
+    if acceso.fecha_expiracion and timezone.now() > acceso.fecha_expiracion:
+        return None, 'ACCESO_EXTERNO_EXPIRADO', (
+            'Tu acceso externo ha expirado. Recupera nuevamente tu inscripción en el evento para continuar.'
+        )
+
+    inscripcion = acceso.inscripcion
+    participante = getattr(inscripcion, 'participante', None)
+    if not participante or participante.usuario_id is not None:
+        return None, 'CUENTA_INSTITUCIONAL', (
+            'Esta inscripción pertenece a una cuenta institucional. Inicia sesión para continuar.'
+        )
+
+    if inscripcion.estado != EstadoInscripcion.ACTIVA:
+        return None, 'SIN_INSCRIPCION_VALIDA', (
+            'Tu inscripción en este evento no se encuentra activa.'
+        )
+
+    if evento is not None and inscripcion.evento_id != evento.pk:
+        return None, 'EVENTO_DISTINTO', (
+            'Tu sesión externa activa corresponde a otro evento. Recupera tu inscripción en este evento para continuar.'
+        )
+
+    if not acceso.es_valido:
+        return None, 'ACCESO_EXTERNO_INVALIDO', 'Tu acceso externo no se encuentra vigente.'
+
+    return acceso, 'VALIDO', 'Sesión externa válida.'
+
+
+def resolver_acceso_externo_sesion(request, evento=None):
+    """
+    Retorna el AccesoExternoInscripcion válido asociado a la sesión actual
+    (opcionalmente restringido a un evento específico), o None si no es válido.
+    """
+    acceso, codigo, _ = diagnosticar_acceso_externo_sesion(request, evento=evento)
+    return acceso if codigo == 'VALIDO' else None
+
+
 def tiene_sesion_externa_activa_evento(request, evento):
     """
     Indica si la sesión actual ya cuenta con un AccesoExternoInscripcion válido
     y vigente para una inscripción ACTIVA de este evento específico.
     """
-    from .models import AccesoExternoInscripcion, EstadoInscripcion
-
-    acceso_id = request.session.get('acceso_externo_id')
-    token_hash = request.session.get('acceso_externo_hash')
-    if not acceso_id or not token_hash or not evento:
+    if not evento:
         return False
-
-    acceso = (
-        AccesoExternoInscripcion.objects
-        .select_related('inscripcion', 'inscripcion__participante')
-        .filter(
-            pk=acceso_id,
-            token_hash=token_hash,
-            revocado=False,
-            inscripcion__evento_id=evento.pk,
-            inscripcion__estado=EstadoInscripcion.ACTIVA,
-        )
-        .first()
-    )
-    return bool(acceso and acceso.es_valido)
+    return resolver_acceso_externo_sesion(request, evento=evento) is not None
 
 
 

@@ -86,6 +86,7 @@ class CalificacionEventoAdmin(admin.ModelAdmin):
     list_display = (
         'id_calificacion',
         'evento',
+        'tipo_participante_admin',
         'puntuacion',
         'etiqueta_admin',
         'fecha_creacion',
@@ -96,23 +97,28 @@ class CalificacionEventoAdmin(admin.ModelAdmin):
     readonly_fields = (
         'id_calificacion',
         'evento',
-        'estudiante',
+        'tipo_participante_admin',
         'puntuacion',
         'fecha_creacion',
         'fecha_actualizacion',
     )
+    exclude = ('estudiante', 'inscripcion')
     ordering = ('-fecha_actualizacion',)
+
+    @admin.display(description='Tipo de participante')
+    def tipo_participante_admin(self, obj):
+        return obj.tipo_participante_label
 
     @admin.display(description='Valoración')
     def etiqueta_admin(self, obj):
         return obj.etiqueta_puntuacion
 
     def has_add_permission(self, request):
-        # Los administradores no pueden registrar calificaciones en nombre de estudiantes (RF-28)
+        # Los administradores no pueden registrar calificaciones en nombre de participantes (RF-28, RF-31)
         return False
 
     def has_change_permission(self, request, obj=None):
-        # Solo lectura para preservar la autenticidad de las calificaciones estudiantiles
+        # Solo lectura para preservar la autenticidad e integridad de las calificaciones
         return False
 
 

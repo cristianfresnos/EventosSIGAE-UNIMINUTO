@@ -17,7 +17,11 @@ from eventos.permissions import (
     obtener_docentes_asociados_evento,
     obtener_nrcs_evento,
 )
-from eventos.services import ETIQUETAS_ESTRELLAS, verificar_elegibilidad_calificacion
+from eventos.services import (
+    ETIQUETAS_ESTRELLAS,
+    verificar_elegibilidad_calificacion,
+    verificar_elegibilidad_calificacion_externa,
+)
 from participantes.models import Inscripcion, EstadoInscripcion, AccesoExternoInscripcion
 from .models import Asistencia, MetodoAsistencia, EstadoAsistencia, ControlEntradaEvento, ControlSalidaEvento
 from .services import (
@@ -689,6 +693,7 @@ def salida_evento_publica(request, id_evento):
         ).select_related('participante', 'asistencia').first()
 
     inscripcion_externa = None
+    acceso_externo_valido = None
     if request.session.get('acceso_externo_id'):
         filtros_acceso = {
             'pk': request.session['acceso_externo_id'],
@@ -702,6 +707,7 @@ def salida_evento_publica(request, id_evento):
         ).select_related('inscripcion', 'inscripcion__participante', 'inscripcion__asistencia').first()
         if acceso and acceso.es_valido and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
             inscripcion_externa = acceso.inscripcion
+            acceso_externo_valido = acceso
 
     if not inscripcion_externa and not request.user.is_authenticated:
         token_acceso = request.GET.get('token_acceso') or request.POST.get('token_acceso')
@@ -709,8 +715,11 @@ def salida_evento_publica(request, id_evento):
             acceso = AccesoExternoInscripcion.validar_token(token_acceso)
             if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
                 inscripcion_externa = acceso.inscripcion
+                acceso_externo_valido = acceso
                 request.session['acceso_externo_id'] = acceso.pk
                 request.session['acceso_externo_hash'] = acceso.token_hash
+                request.session['acceso_externo_inscripcion_id'] = acceso.inscripcion_id
+                request.session['acceso_externo_evento_id'] = evento.pk
 
     inscripcion_target = inscripcion_usuario or inscripcion_externa
     resultado = None
@@ -770,11 +779,21 @@ def salida_evento_publica(request, id_evento):
             observaciones="Salida confirmada mediante QR colectivo con identidad de sesión validada"
         )
 
-        # Determinar evaluación obligatoria posterior a la persistencia de la salida (RF-26, RF-27)
+        # Determinar evaluación obligatoria posterior a la persistencia de la salida (RF-26, RF-27, RF-31)
         requiere_calificacion = False
         url_calificacion = ''
-        if request.user.is_authenticated and (resultado['exito'] or resultado.get('codigo') == 'SALIDA_YA_REGISTRADA'):
-            eleg_calif = verificar_elegibilidad_calificacion(request.user, evento)
+        if resultado['exito'] or resultado.get('codigo') == 'SALIDA_YA_REGISTRADA':
+            if request.user.is_authenticated:
+                eleg_calif = verificar_elegibilidad_calificacion(request.user, evento)
+            elif acceso_externo_valido and inscripcion_externa and request.session.get('acceso_externo_hash'):
+                eleg_calif = verificar_elegibilidad_calificacion_externa(
+                    inscripcion_externa,
+                    evento=evento,
+                    acceso_externo=acceso_externo_valido,
+                )
+            else:
+                eleg_calif = {'elegible': False, 'calificacion_existente': None}
+
             if eleg_calif['elegible'] and eleg_calif['calificacion_existente'] is None:
                 requiere_calificacion = True
                 url_calificacion = reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})
@@ -795,11 +814,20 @@ def salida_evento_publica(request, id_evento):
     url_calificar_evento = ''
     if request.user.is_authenticated:
         eleg_vista = verificar_elegibilidad_calificacion(request.user, evento)
-        if eleg_vista['elegible']:
-            calificacion_existente = eleg_vista['calificacion_existente']
-            url_calificar_evento = reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})
-            if calificacion_existente is None:
-                mostrar_calificacion_obligatoria = True
+    elif acceso_externo_valido and inscripcion_externa and request.session.get('acceso_externo_hash'):
+        eleg_vista = verificar_elegibilidad_calificacion_externa(
+            inscripcion_externa,
+            evento=evento,
+            acceso_externo=acceso_externo_valido,
+        )
+    else:
+        eleg_vista = {'elegible': False, 'calificacion_existente': None}
+
+    if eleg_vista['elegible']:
+        calificacion_existente = eleg_vista['calificacion_existente']
+        url_calificar_evento = reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})
+        if calificacion_existente is None:
+            mostrar_calificacion_obligatoria = True
 
     return render(request, 'asistencia/salida_evento.html', {
         'evento': evento,
@@ -1055,6 +1083,7 @@ def registrar_salida_participante(request, id_evento):
 
     # 1. Resolver identidad del participante de forma estricta desde la sesión
     inscripcion = None
+    acceso_externo_valido = None
     if request.user.is_authenticated:
         inscripcion = Inscripcion.objects.filter(
             evento=evento,
@@ -1074,6 +1103,7 @@ def registrar_salida_participante(request, id_evento):
         ).select_related('inscripcion', 'inscripcion__participante', 'inscripcion__asistencia').first()
         if acceso and acceso.es_valido and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
             inscripcion = acceso.inscripcion
+            acceso_externo_valido = acceso
 
     if not inscripcion and not request.user.is_authenticated:
         token_acceso = request.POST.get('token_acceso') or request.GET.get('token')
@@ -1081,8 +1111,11 @@ def registrar_salida_participante(request, id_evento):
             acceso = AccesoExternoInscripcion.validar_token(token_acceso)
             if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
                 inscripcion = acceso.inscripcion
+                acceso_externo_valido = acceso
                 request.session['acceso_externo_id'] = acceso.pk
                 request.session['acceso_externo_hash'] = acceso.token_hash
+                request.session['acceso_externo_inscripcion_id'] = acceso.inscripcion_id
+                request.session['acceso_externo_evento_id'] = evento.pk
 
     if not inscripcion:
         return JsonResponse({
@@ -1145,12 +1178,22 @@ def registrar_salida_participante(request, id_evento):
     if resultado.get('codigo') == 'SALIDA_YA_REGISTRADA':
         status_code = 200
 
-    # Evaluar obligación de calificación inmediatamente después de persistir la salida (RF-26, RF-27)
+    # Evaluar obligación de calificación inmediatamente después de persistir la salida (RF-26, RF-27, RF-31)
     requiere_calificacion = False
     ya_califico = False
     url_calificacion = ''
-    if request.user.is_authenticated and (resultado['exito'] or resultado.get('codigo') == 'SALIDA_YA_REGISTRADA'):
-        eleg_calif = verificar_elegibilidad_calificacion(request.user, evento)
+    if resultado['exito'] or resultado.get('codigo') == 'SALIDA_YA_REGISTRADA':
+        if request.user.is_authenticated:
+            eleg_calif = verificar_elegibilidad_calificacion(request.user, evento)
+        elif acceso_externo_valido and request.session.get('acceso_externo_hash'):
+            eleg_calif = verificar_elegibilidad_calificacion_externa(
+                inscripcion,
+                evento=evento,
+                acceso_externo=acceso_externo_valido,
+            )
+        else:
+            eleg_calif = {'elegible': False, 'calificacion_existente': None}
+
         if eleg_calif['elegible']:
             url_calificacion = reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})
             if eleg_calif['calificacion_existente'] is None:
@@ -1182,6 +1225,7 @@ def escanear_salida(request, id_evento):
     )
 
     inscripcion = None
+    acceso_externo_valido = None
     if request.user.is_authenticated:
         inscripcion = Inscripcion.objects.filter(
             evento=evento,
@@ -1201,6 +1245,7 @@ def escanear_salida(request, id_evento):
         ).select_related('inscripcion', 'inscripcion__participante', 'inscripcion__asistencia').first()
         if acceso and acceso.es_valido and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
             inscripcion = acceso.inscripcion
+            acceso_externo_valido = acceso
 
     if not inscripcion and not request.user.is_authenticated:
         token_acceso = request.GET.get('token')
@@ -1208,8 +1253,11 @@ def escanear_salida(request, id_evento):
             acceso = AccesoExternoInscripcion.validar_token(token_acceso)
             if acceso and acceso.inscripcion.evento_id == evento.pk and acceso.inscripcion.estado == EstadoInscripcion.ACTIVA:
                 inscripcion = acceso.inscripcion
+                acceso_externo_valido = acceso
                 request.session['acceso_externo_id'] = acceso.pk
                 request.session['acceso_externo_hash'] = acceso.token_hash
+                request.session['acceso_externo_inscripcion_id'] = acceso.inscripcion_id
+                request.session['acceso_externo_evento_id'] = evento.pk
 
     if not inscripcion:
         if not request.user.is_authenticated:
@@ -1221,11 +1269,24 @@ def escanear_salida(request, id_evento):
     llegada_registrada = bool(asistencia and asistencia.estado == EstadoAsistencia.REGISTRADA and asistencia.hora_entrada)
     salida_registrada = bool(asistencia and asistencia.estado == EstadoAsistencia.REGISTRADA and asistencia.hora_salida)
 
-    # Si ya registró salida y tiene calificación obligatoria pendiente, redirigir directamente sin re-escanear QR (RF-27)
-    if salida_registrada and request.user.is_authenticated:
-        eleg_calif = verificar_elegibilidad_calificacion(request.user, evento)
+    # Si ya registró salida y tiene calificación obligatoria pendiente, redirigir directamente sin re-escanear QR (RF-27, RF-31)
+    if salida_registrada:
+        if request.user.is_authenticated:
+            eleg_calif = verificar_elegibilidad_calificacion(request.user, evento)
+        elif acceso_externo_valido and request.session.get('acceso_externo_hash'):
+            eleg_calif = verificar_elegibilidad_calificacion_externa(
+                inscripcion,
+                evento=evento,
+                acceso_externo=acceso_externo_valido,
+            )
+        else:
+            eleg_calif = {'elegible': False, 'calificacion_existente': None}
+
         if eleg_calif['elegible'] and eleg_calif['calificacion_existente'] is None:
-            return redirect('eventos:calificar_evento', id_evento=evento.pk)
+            resp = redirect('eventos:calificar_evento', id_evento=evento.pk)
+            if not request.user.is_authenticated:
+                resp['Referrer-Policy'] = 'no-referrer'
+            return resp
 
     control = ControlSalidaEvento.objects.filter(evento=evento).first()
     salidas_habilitadas = bool(control and control.salidas_habilitadas and control.fecha_cierre is None)

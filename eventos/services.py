@@ -8,7 +8,7 @@ from django.db.models import Avg, Count, Exists, OuterRef, Q
 
 from auditoria.models import Auditoria
 from asistencia.models import Asistencia, EstadoAsistencia
-from participantes.models import Inscripcion, EstadoInscripcion
+from participantes.models import AccesoExternoInscripcion, Inscripcion, EstadoInscripcion
 from .models import CalificacionEvento
 
 
@@ -114,8 +114,7 @@ def verificar_elegibilidad_calificacion(user, evento):
         }
 
     calificacion_existente = CalificacionEvento.objects.filter(
-        evento=evento,
-        estudiante=user,
+        Q(evento=evento, estudiante=user) | Q(inscripcion=inscripcion)
     ).first()
 
     return {
@@ -126,6 +125,138 @@ def verificar_elegibilidad_calificacion(user, evento):
         'asistencia': asistencia,
         'calificacion_existente': calificacion_existente,
     }
+
+
+def verificar_elegibilidad_calificacion_externa(inscripcion, evento=None, acceso_externo=None):
+    """
+    Valida estrictamente en backend todas las condiciones de elegibilidad para que un
+    participante externo (usuario_id=NULL) califique un evento usando su inscripción y
+    su AccesoExternoInscripcion vigente (RF-31):
+    1. Inscripción activa perteneciente al evento evaluado.
+    2. Participante sin cuenta institucional (usuario_id IS NULL).
+    3. AccesoExternoInscripcion válido, vigente y no revocado para esa inscripción.
+    4. Registro de entrada válido (Asistencia REGISTRADA con hora_entrada).
+    5. Registro de salida válido (hora_salida confirmada).
+    """
+    if not inscripcion or inscripcion.estado != EstadoInscripcion.ACTIVA:
+        return {
+            'elegible': False,
+            'codigo': 'SIN_INSCRIPCION_VALIDA',
+            'mensaje': 'No cuentas con una inscripción válida y activa en este evento para calificarlo.',
+            'inscripcion': inscripcion,
+            'asistencia': None,
+            'calificacion_existente': None,
+        }
+
+    if evento is not None and inscripcion.evento_id != evento.pk:
+        return {
+            'elegible': False,
+            'codigo': 'EVENTO_DISTINTO',
+            'mensaje': 'Tu inscripción activa no corresponde al evento que intentas calificar.',
+            'inscripcion': inscripcion,
+            'asistencia': None,
+            'calificacion_existente': None,
+        }
+
+    participante = getattr(inscripcion, 'participante', None)
+    if not participante or participante.usuario_id is not None:
+        return {
+            'elegible': False,
+            'codigo': 'CUENTA_INSTITUCIONAL',
+            'mensaje': 'Esta inscripción pertenece a una cuenta institucional. Inicia sesión para calificar el evento.',
+            'inscripcion': inscripcion,
+            'asistencia': None,
+            'calificacion_existente': None,
+        }
+
+    acceso_eval = acceso_externo
+    if acceso_eval is None:
+        acceso_eval = AccesoExternoInscripcion.objects.filter(inscripcion=inscripcion).first()
+
+    if not acceso_eval or acceso_eval.inscripcion_id != inscripcion.pk:
+        return {
+            'elegible': False,
+            'codigo': 'ACCESO_EXTERNO_INVALIDO',
+            'mensaje': 'No se encontró un acceso externo válido para esta inscripción.',
+            'inscripcion': inscripcion,
+            'asistencia': None,
+            'calificacion_existente': None,
+        }
+
+    if acceso_eval.revocado:
+        return {
+            'elegible': False,
+            'codigo': 'ACCESO_EXTERNO_REVOCADO',
+            'mensaje': 'El acceso a esta inscripción fue revocado y no puede utilizarse para calificar el evento.',
+            'inscripcion': inscripcion,
+            'asistencia': None,
+            'calificacion_existente': None,
+        }
+
+    if not acceso_eval.es_valido:
+        return {
+            'elegible': False,
+            'codigo': 'ACCESO_EXTERNO_EXPIRADO',
+            'mensaje': 'Tu acceso externo ha expirado. Recupera nuevamente tu inscripción en el evento para calificar.',
+            'inscripcion': inscripcion,
+            'asistencia': None,
+            'calificacion_existente': None,
+        }
+
+    asistencia = Asistencia.objects.filter(inscripcion=inscripcion).first()
+    if not asistencia or asistencia.estado != EstadoAsistencia.REGISTRADA or not asistencia.hora_entrada:
+        return {
+            'elegible': False,
+            'codigo': 'SIN_ENTRADA_REGISTRADA',
+            'mensaje': 'Debes contar con un registro de entrada confirmado en este evento antes de calificarlo.',
+            'inscripcion': inscripcion,
+            'asistencia': asistencia,
+            'calificacion_existente': None,
+        }
+
+    if not asistencia.hora_salida:
+        return {
+            'elegible': False,
+            'codigo': 'SIN_SALIDA_REGISTRADA',
+            'mensaje': 'Debes registrar tu salida mediante el código QR del evento antes de enviar tu calificación.',
+            'inscripcion': inscripcion,
+            'asistencia': asistencia,
+            'calificacion_existente': None,
+        }
+
+    calificacion_existente = CalificacionEvento.objects.filter(
+        inscripcion=inscripcion,
+    ).first()
+
+    return {
+        'elegible': True,
+        'codigo': 'ELEGIBLE_ACTUALIZACION' if calificacion_existente else 'ELEGIBLE_NUEVA',
+        'mensaje': 'Elegible para calificar el evento.',
+        'inscripcion': inscripcion,
+        'asistencia': asistencia,
+        'calificacion_existente': calificacion_existente,
+    }
+
+
+def obtener_evaluacion_pendiente_externa(acceso_externo):
+    """
+    Retorna la Inscripcion asociada a un AccesoExternoInscripcion válido si cumple
+    entrada + salida confirmadas y todavía no registra CalificacionEvento (RF-31).
+    En cualquier otro caso (sin acceso, revocado, expirado, sin salida o ya calificado)
+    retorna None.
+    """
+    if not acceso_externo or acceso_externo.revocado or not acceso_externo.es_valido:
+        return None
+    inscripcion = getattr(acceso_externo, 'inscripcion', None)
+    if not inscripcion:
+        return None
+    eleg = verificar_elegibilidad_calificacion_externa(
+        inscripcion,
+        acceso_externo=acceso_externo,
+    )
+    if eleg['elegible'] and eleg['calificacion_existente'] is None:
+        return inscripcion
+    return None
 
 
 def obtener_evaluaciones_pendientes(user):
@@ -141,8 +272,7 @@ def obtener_evaluaciones_pendientes(user):
         return Inscripcion.objects.none()
 
     calificacion_subquery = CalificacionEvento.objects.filter(
-        evento_id=OuterRef('evento_id'),
-        estudiante=user,
+        Q(evento_id=OuterRef('evento_id'), estudiante=user) | Q(inscripcion_id=OuterRef('pk'))
     )
 
     return (
@@ -227,11 +357,162 @@ def registrar_o_actualizar_calificacion(user, evento, puntuacion_raw, ip=None):
             'status_http': 400,
         }
 
+    inscripcion = elegibilidad['inscripcion']
+
     with transaction.atomic():
+        if inscripcion is not None:
+            Inscripcion.objects.select_for_update().filter(pk=inscripcion.pk).first()
+
         existente = (
             CalificacionEvento.objects
             .select_for_update()
-            .filter(evento=evento, estudiante=user)
+            .filter(Q(evento=evento, estudiante=user) | Q(inscripcion=inscripcion))
+            .first()
+        )
+
+        if existente:
+            existente.puntuacion = puntuacion
+            update_fields = ['puntuacion', 'fecha_actualizacion']
+            if existente.estudiante_id is None:
+                existente.estudiante = user
+                update_fields.append('estudiante')
+            if inscripcion is not None and existente.inscripcion_id is None:
+                existente.inscripcion = inscripcion
+                update_fields.append('inscripcion')
+            existente.full_clean()
+            existente.save(update_fields=update_fields)
+            calificacion = existente
+            creada = False
+            actualizada = True
+            accion_audit = 'ACTUALIZAR_CALIFICACION_EVENTO'
+        else:
+            try:
+                with transaction.atomic():
+                    calificacion = CalificacionEvento(
+                        evento=evento,
+                        estudiante=user,
+                        inscripcion=inscripcion,
+                        puntuacion=puntuacion,
+                    )
+                    calificacion.full_clean()
+                    calificacion.save()
+                creada = True
+                actualizada = False
+                accion_audit = 'CREAR_CALIFICACION_EVENTO'
+            except IntegrityError:
+                # Protección frente a doble envío simultáneo: actualizar el registro único
+                existente_conc = (
+                    CalificacionEvento.objects
+                    .select_for_update()
+                    .filter(Q(evento=evento, estudiante=user) | Q(inscripcion=inscripcion))
+                    .first()
+                )
+                existente_conc.puntuacion = puntuacion
+                update_fields = ['puntuacion', 'fecha_actualizacion']
+                if existente_conc.estudiante_id is None:
+                    existente_conc.estudiante = user
+                    update_fields.append('estudiante')
+                if inscripcion is not None and existente_conc.inscripcion_id is None:
+                    existente_conc.inscripcion = inscripcion
+                    update_fields.append('inscripcion')
+                existente_conc.full_clean()
+                existente_conc.save(update_fields=update_fields)
+                calificacion = existente_conc
+                creada = False
+                actualizada = True
+                accion_audit = 'ACTUALIZAR_CALIFICACION_EVENTO'
+
+        Auditoria.objects.create(
+            usuario=user,
+            accion=accion_audit,
+            modulo='EVENTOS',
+            registro_afectado=f"Calificacion ID {calificacion.pk} - Evento {evento.pk} ({puntuacion}/5)"[:100],
+            ip=ip,
+        )
+
+    return {
+        'exito': True,
+        'codigo': 'CALIFICACION_ACTUALIZADA' if actualizada else 'CALIFICACION_REGISTRADA',
+        'mensaje': '¡Gracias por tu opinión! Tu calificación ha sido registrada correctamente.',
+        'calificacion': calificacion,
+        'creada': creada,
+        'actualizada': actualizada,
+        'status_http': 200,
+    }
+
+
+def registrar_o_actualizar_calificacion_externa(inscripcion, acceso_externo, evento, puntuacion_raw, ip=None):
+    """
+    Registra o actualiza la calificación única de un participante externo sin cuenta
+    institucional mediante su inscripción y su AccesoExternoInscripcion vigente (RF-31).
+
+    Opera en su propia transacción atómica con bloqueo select_for_update sobre el acceso
+    externo y la inscripción para evitar duplicados por doble clic o concurrencia y
+    garantizar que un acceso revocado concurrentemente sea rechazado.
+    """
+    elegibilidad = verificar_elegibilidad_calificacion_externa(
+        inscripcion,
+        evento=evento,
+        acceso_externo=acceso_externo,
+    )
+    if not elegibilidad['elegible']:
+        return {
+            'exito': False,
+            'codigo': elegibilidad['codigo'],
+            'mensaje': elegibilidad['mensaje'],
+            'calificacion': None,
+            'creada': False,
+            'actualizada': False,
+            'status_http': 403,
+        }
+
+    valida, puntuacion, err_msg = validar_puntuacion_estrellas(puntuacion_raw)
+    if not valida:
+        return {
+            'exito': False,
+            'codigo': 'PUNTUACION_INVALIDA',
+            'mensaje': err_msg,
+            'calificacion': elegibilidad['calificacion_existente'],
+            'creada': False,
+            'actualizada': False,
+            'status_http': 400,
+        }
+
+    with transaction.atomic():
+        inscripcion_lock = (
+            Inscripcion.objects
+            .select_for_update()
+            .select_related('participante')
+            .filter(pk=inscripcion.pk, evento=evento, estado=EstadoInscripcion.ACTIVA)
+            .first()
+        )
+        acceso_lock = (
+            AccesoExternoInscripcion.objects
+            .select_for_update()
+            .filter(pk=acceso_externo.pk, inscripcion_id=inscripcion.pk)
+            .first()
+        )
+        if (
+            not inscripcion_lock
+            or inscripcion_lock.participante.usuario_id is not None
+            or not acceso_lock
+            or acceso_lock.revocado
+            or not acceso_lock.es_valido
+        ):
+            return {
+                'exito': False,
+                'codigo': 'ACCESO_EXTERNO_REVOCADO' if (acceso_lock and acceso_lock.revocado) else 'ACCESO_EXTERNO_INVALIDO',
+                'mensaje': 'Tu acceso externo ya no es válido para registrar o actualizar la calificación.',
+                'calificacion': None,
+                'creada': False,
+                'actualizada': False,
+                'status_http': 403,
+            }
+
+        existente = (
+            CalificacionEvento.objects
+            .select_for_update()
+            .filter(inscripcion=inscripcion_lock)
             .first()
         )
 
@@ -245,22 +526,23 @@ def registrar_o_actualizar_calificacion(user, evento, puntuacion_raw, ip=None):
             accion_audit = 'ACTUALIZAR_CALIFICACION_EVENTO'
         else:
             try:
-                calificacion = CalificacionEvento(
-                    evento=evento,
-                    estudiante=user,
-                    puntuacion=puntuacion,
-                )
-                calificacion.full_clean()
-                calificacion.save()
+                with transaction.atomic():
+                    calificacion = CalificacionEvento(
+                        evento=evento,
+                        estudiante=None,
+                        inscripcion=inscripcion_lock,
+                        puntuacion=puntuacion,
+                    )
+                    calificacion.full_clean()
+                    calificacion.save()
                 creada = True
                 actualizada = False
                 accion_audit = 'CREAR_CALIFICACION_EVENTO'
             except IntegrityError:
-                # Protección frente a doble envío simultáneo: actualizar el registro único
                 existente_conc = (
                     CalificacionEvento.objects
                     .select_for_update()
-                    .get(evento=evento, estudiante=user)
+                    .get(inscripcion=inscripcion_lock)
                 )
                 existente_conc.puntuacion = puntuacion
                 existente_conc.full_clean()
@@ -271,10 +553,10 @@ def registrar_o_actualizar_calificacion(user, evento, puntuacion_raw, ip=None):
                 accion_audit = 'ACTUALIZAR_CALIFICACION_EVENTO'
 
         Auditoria.objects.create(
-            usuario=user,
+            usuario=None,
             accion=accion_audit,
             modulo='EVENTOS',
-            registro_afectado=f"Calificacion ID {calificacion.pk} - Evento {evento.pk} ({puntuacion}/5)"[:100],
+            registro_afectado=f"Calificacion ID {calificacion.pk} - Insc {inscripcion_lock.pk} - Evento {evento.pk} ({puntuacion}/5)"[:100],
             ip=ip,
         )
 

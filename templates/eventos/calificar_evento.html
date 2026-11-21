@@ -273,7 +273,11 @@
                     ¡Gracias por tu opinión! Tu calificación ha sido registrada correctamente.
                 </h2>
                 <p style="color: #475569; font-size: 0.95rem; margin-bottom: 1rem;">
-                    Tu evaluación sobre <strong>{{ evento.nombre }}</strong> fue guardada en tu historial académico.
+                    {% if es_externo %}
+                        Tu evaluación sobre <strong>{{ evento.nombre }}</strong> fue registrada correctamente.
+                    {% else %}
+                        Tu evaluación sobre <strong>{{ evento.nombre }}</strong> fue guardada en tu historial académico.
+                    {% endif %}
                 </p>
 
                 <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.1rem; margin: 1rem 0;">
@@ -302,9 +306,15 @@
                     </div>
                 {% else %}
                     <div class="confirmation-actions">
-                        <a href="{% url 'participantes:mis_inscripciones' %}" class="btn btn-primary" style="width: 100%; padding: 0.85rem; font-weight: 700;">
-                            Ver Mis Inscripciones e Historial
-                        </a>
+                        {% if es_externo %}
+                            <a href="{% url 'participantes:ver_inscripcion_externa' %}" class="btn btn-primary" style="width: 100%; padding: 0.85rem; font-weight: 700;">
+                                Volver a Mi Comprobante e Inscripción
+                            </a>
+                        {% else %}
+                            <a href="{% url 'participantes:mis_inscripciones' %}" class="btn btn-primary" style="width: 100%; padding: 0.85rem; font-weight: 700;">
+                                Ver Mis Inscripciones e Historial
+                            </a>
+                        {% endif %}
                         <a href="{% url 'eventos:detalle' evento.pk %}" class="btn btn-secondary" style="width: 100%; padding: 0.8rem;">
                             Volver al Detalle del Evento
                         </a>
@@ -383,9 +393,15 @@
 
                 {% if not es_obligatoria %}
                     <div style="margin-top: 1.25rem;">
-                        <a href="{% url 'participantes:mis_inscripciones' %}" style="font-size: 0.88rem; color: #64748b; text-decoration: none;">
-                            ← Volver a Mis Inscripciones
-                        </a>
+                        {% if es_externo %}
+                            <a href="{% url 'participantes:ver_inscripcion_externa' %}" style="font-size: 0.88rem; color: #64748b; text-decoration: none;">
+                                ← Volver a Mi Comprobante
+                            </a>
+                        {% else %}
+                            <a href="{% url 'participantes:mis_inscripciones' %}" style="font-size: 0.88rem; color: #64748b; text-decoration: none;">
+                                ← Volver a Mis Inscripciones
+                            </a>
+                        {% endif %}
                     </div>
                 {% endif %}
             {% endif %}

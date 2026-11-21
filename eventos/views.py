@@ -12,6 +12,7 @@ from django.utils import timezone
 from auditoria.models import Auditoria
 from usuarios.models import Usuario
 from participantes.models import Inscripcion, EstadoInscripcion
+from participantes.services import diagnosticar_acceso_externo_sesion
 from asistencia.models import Asistencia, EstadoAsistencia, ControlEntradaEvento, ControlSalidaEvento
 from asistencia.services import (
     es_salida_habilitada,
@@ -36,8 +37,10 @@ from .services import (
     ETIQUETAS_ESTRELLAS,
     es_estudiante_elegible_rol,
     verificar_elegibilidad_calificacion,
+    verificar_elegibilidad_calificacion_externa,
     obtener_evaluaciones_pendientes,
     registrar_o_actualizar_calificacion,
+    registrar_o_actualizar_calificacion_externa,
     calcular_estadisticas_calificacion,
 )
 
@@ -441,18 +444,21 @@ def cancelar_evento(request, id_evento):
     })
 
 
-@login_required
 def calificar_evento(request, id_evento):
     """
-    Vista obligatoria de calificación mediante 5 estrellas para estudiantes que completaron
-    su participación (inscripción activa, entrada confirmada y salida registrada) (RF-24 a RF-28).
+    Vista obligatoria de calificación mediante 5 estrellas para participantes que completaron
+    su asistencia (inscripción activa, entrada confirmada y salida registrada) (RF-24 a RF-31).
 
     Reglas de seguridad y negocio:
-    - Solo accesible por estudiantes autenticados elegibles (Docentes y Administradores reciben 403).
-    - Valida inscripción, entrada y salida estrictamente en backend.
-    - Cuando no existe calificación previa, la evaluación es obligatoria (sin opciones para omitir ni posponer).
-    - Cuando ya existe calificación previa del mismo estudiante, permite actualizar su propia puntuación.
-    - No expone ni permite modificar calificaciones de otros estudiantes.
+    - Estudiantes institucionales: requiere sesión autenticada y rol Estudiante (Docentes,
+      Coordinadores y Administradores reciben 403).
+    - Participantes externos: no requiere cuenta institucional; valida estrictamente la sesión
+      externa criptográfica (acceso_externo_id + acceso_externo_hash) sin aceptar inscripcion_id
+      ni participante_id desde el navegador.
+    - Visitantes anónimos sin sesión externa son redirigidos al inicio de sesión institucional.
+    - Cuando no existe calificación previa, la evaluación es obligatoria (sin opciones para omitir).
+    - Cuando ya existe calificación previa del mismo sujeto, permite actualizar su propia puntuación.
+    - No expone ni permite modificar calificaciones de otros participantes.
     """
     evento = get_object_or_404(
         Evento.objects.select_related('categoria', 'organizador'),
@@ -464,14 +470,50 @@ def calificar_evento(request, id_evento):
         or request.content_type == 'application/json'
     )
 
-    elegibilidad = verificar_elegibilidad_calificacion(request.user, evento)
+    es_externo = False
+    acceso_externo = None
+
+    if request.user.is_authenticated:
+        elegibilidad = verificar_elegibilidad_calificacion(request.user, evento)
+    else:
+        acceso_externo, codigo_ext, mensaje_ext = diagnosticar_acceso_externo_sesion(request, evento=evento)
+        if codigo_ext == 'SIN_SESION':
+            if is_ajax:
+                return JsonResponse({
+                    'exito': False,
+                    'codigo': 'NO_AUTENTICADO',
+                    'mensaje': 'Debes iniciar sesión o recuperar tu inscripción pública para calificar este evento.',
+                }, status=403)
+            return redirect(f"{reverse('usuarios:login')}?next={request.path}")
+
+        if codigo_ext != 'VALIDO' or acceso_externo is None:
+            if is_ajax:
+                resp = JsonResponse({
+                    'exito': False,
+                    'codigo': codigo_ext,
+                    'mensaje': mensaje_ext,
+                }, status=403)
+                resp['Referrer-Policy'] = 'no-referrer'
+                return resp
+            raise PermissionDenied(mensaje_ext)
+
+        es_externo = True
+        elegibilidad = verificar_elegibilidad_calificacion_externa(
+            acceso_externo.inscripcion,
+            evento=evento,
+            acceso_externo=acceso_externo,
+        )
+
     if not elegibilidad['elegible']:
         if is_ajax:
-            return JsonResponse({
+            resp = JsonResponse({
                 'exito': False,
                 'codigo': elegibilidad['codigo'],
                 'mensaje': elegibilidad['mensaje'],
             }, status=403)
+            if es_externo:
+                resp['Referrer-Policy'] = 'no-referrer'
+            return resp
         raise PermissionDenied(elegibilidad['mensaje'])
 
     asistencia = elegibilidad['asistencia']
@@ -489,17 +531,34 @@ def calificar_evento(request, id_evento):
             except Exception:
                 puntuacion_raw = None
 
-        resultado = registrar_o_actualizar_calificacion(
-            user=request.user,
-            evento=evento,
-            puntuacion_raw=puntuacion_raw,
-            ip=get_client_ip(request),
-        )
+        if es_externo:
+            resultado = registrar_o_actualizar_calificacion_externa(
+                inscripcion=acceso_externo.inscripcion,
+                acceso_externo=acceso_externo,
+                evento=evento,
+                puntuacion_raw=puntuacion_raw,
+                ip=get_client_ip(request),
+            )
+        else:
+            resultado = registrar_o_actualizar_calificacion(
+                user=request.user,
+                evento=evento,
+                puntuacion_raw=puntuacion_raw,
+                ip=get_client_ip(request),
+            )
 
         if is_ajax:
-            pendientes_restantes = obtener_evaluaciones_pendientes(request.user)
-            siguiente_pendiente = pendientes_restantes.first()
-            return JsonResponse({
+            if es_externo:
+                siguiente_pendiente = None
+                siguiente_url = reverse('participantes:ver_inscripcion_externa')
+            else:
+                pendientes_restantes = obtener_evaluaciones_pendientes(request.user)
+                siguiente_pendiente = pendientes_restantes.first()
+                siguiente_url = (
+                    reverse('eventos:calificar_evento', kwargs={'id_evento': siguiente_pendiente.evento_id})
+                    if siguiente_pendiente else reverse('participantes:mis_inscripciones')
+                )
+            resp = JsonResponse({
                 'exito': resultado['exito'],
                 'codigo': resultado['codigo'],
                 'mensaje': resultado['mensaje'],
@@ -508,46 +567,61 @@ def calificar_evento(request, id_evento):
                 'creada': resultado['creada'],
                 'actualizada': resultado['actualizada'],
                 'tiene_pendientes': siguiente_pendiente is not None,
-                'siguiente_url': (
-                    reverse('eventos:calificar_evento', kwargs={'id_evento': siguiente_pendiente.evento_id})
-                    if siguiente_pendiente else reverse('participantes:mis_inscripciones')
-                ),
+                'siguiente_url': siguiente_url,
             }, status=resultado['status_http'])
+            if es_externo:
+                resp['Referrer-Policy'] = 'no-referrer'
+            return resp
 
         if resultado['exito']:
             messages.success(request, resultado['mensaje'])
-            return redirect(f"{reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})}?confirmada=1")
+            resp = redirect(f"{reverse('eventos:calificar_evento', kwargs={'id_evento': evento.pk})}?confirmada=1")
+            if es_externo:
+                resp['Referrer-Policy'] = 'no-referrer'
+            return resp
 
         error_mensaje = resultado['mensaje']
         status_code = resultado['status_http']
-        return render(request, 'eventos/calificar_evento.html', {
+        resp = render(request, 'eventos/calificar_evento.html', {
             'evento': evento,
             'asistencia': asistencia,
             'calificacion': calificacion_existente,
             'es_obligatoria': es_obligatoria,
             'ocultar_navegacion_obligatoria': es_obligatoria,
+            'es_externo': es_externo,
             'confirmada': False,
             'error_mensaje': error_mensaje,
             'etiquetas_estrellas': ETIQUETAS_ESTRELLAS,
             'pendientes_restantes': [],
             'siguiente_pendiente': None,
         }, status=status_code)
+        if es_externo:
+            resp['Referrer-Policy'] = 'no-referrer'
+        return resp
 
-    pendientes_restantes = list(obtener_evaluaciones_pendientes(request.user).exclude(evento_id=evento.pk))
-    siguiente_pendiente = pendientes_restantes[0] if pendientes_restantes else None
+    if es_externo:
+        pendientes_restantes = []
+        siguiente_pendiente = None
+    else:
+        pendientes_restantes = list(obtener_evaluaciones_pendientes(request.user).exclude(evento_id=evento.pk))
+        siguiente_pendiente = pendientes_restantes[0] if pendientes_restantes else None
 
-    return render(request, 'eventos/calificar_evento.html', {
+    resp = render(request, 'eventos/calificar_evento.html', {
         'evento': evento,
         'asistencia': asistencia,
         'calificacion': calificacion_existente,
         'es_obligatoria': es_obligatoria,
         'ocultar_navegacion_obligatoria': es_obligatoria,
+        'es_externo': es_externo,
         'confirmada': confirmada,
         'error_mensaje': error_mensaje,
         'etiquetas_estrellas': ETIQUETAS_ESTRELLAS,
         'pendientes_restantes': pendientes_restantes,
         'siguiente_pendiente': siguiente_pendiente,
     })
+    if es_externo:
+        resp['Referrer-Policy'] = 'no-referrer'
+    return resp
 
 
 @login_required
